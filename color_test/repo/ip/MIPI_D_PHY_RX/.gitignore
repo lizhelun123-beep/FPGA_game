@@ -1,0 +1,9 @@
+# Make sure we keep only xci files in repo ip hdl subfolder
+hdl/*/*
+# Ignore 'generated_ip' directory inside repo/ip
+!hdl/*/
+!hdl/*/*.xci
+!hdl/*/*.vho
+!hdl/*/*.veo
+!hdl/*/*.patch
+!hdl/*/*.tcl

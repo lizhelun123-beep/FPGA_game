@@ -1,0 +1,6 @@
+the_ROM_image:
+{
+    [bootloader] ../../build/camera_recovery/camera_platform/zynq_fsbl/fsbl.elf
+    ../../color_test.runs/impl_1/system_wrapper.bit
+    ../../build/camera_recovery/output/camera_recovery.elf
+}

@@ -1,0 +1,1 @@
+connect_debug_port dbg_hub/clk [get_nets system_i/processing_system7_0_FCLK_CLK0]

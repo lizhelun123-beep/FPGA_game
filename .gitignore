@@ -1,0 +1,64 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Claude local config
+.claude/settings.local.json
+
+# Vivado and Vitis generated data
+.Xil/
+xsim.dir/
+*.jou
+*.log
+*.pb
+color_test/.Xil/
+color_test/color_test.cache/
+color_test/color_test.gen/
+color_test/color_test.hw/
+color_test/color_test.ip_user_files/
+color_test/color_test.runs/
+color_test/color_test.sim/
+color_test/color_test.srcs/sources_1/bd/system/ip/
+color_test/color_test.srcs/sources_1/bd/system/hw_handoff/
+color_test/color_test.srcs/sources_1/bd/system/sim/
+color_test/color_test.srcs/sources_1/bd/system/synth/
+color_test/color_test.srcs/sources_1/bd/system/*.bda
+color_test/color_test.srcs/sources_1/bd/system/*.bxml
+color_test/color_test.srcs/sources_1/bd/system/*_ooc.xdc
+color_test/color_test.srcs/utils_1/imports/
+color_test/repo/ip/*/hdl/*/*.xml
+color_test/reports/
+color_test/bootimage/
+color_test/build/
+color_test/*.xsa
+color_test/**/*.bit
+color_test/**/*.ltx
+color_test/**/*.elf
+color_test/**/*.bin
+color_test/*.xsa.before_*
+color_test/software/mipi_hdmi/.metadata/
+color_test/software/mipi_hdmi/.analytics
+color_test/software/mipi_hdmi/RemoteSystemsTempFiles/
+color_test/software/mipi_hdmi/color_test/
+color_test/software/mipi_hdmi/mipi_hdmi/_ide/
+color_test/software/mipi_hdmi/mipi_hdmi/Debug/
+color_test/software/mipi_hdmi/mipi_hdmi_system/
+color_test/software/mipi_hdmi/mipi_hdmi.elf
+
+# Local previews and scratch files
+NA/
+output/
+tmp/

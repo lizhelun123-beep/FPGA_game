@@ -1,0 +1,6 @@
+the_ROM_image:
+{
+    [bootloader] ../software/mipi_hdmi/color_test/zynq_fsbl/fsbl.elf
+    ../color_test.runs/impl_1/system_wrapper.bit
+    ../software/mipi_hdmi/mipi_hdmi/Debug/mipi_hdmi.elf
+}

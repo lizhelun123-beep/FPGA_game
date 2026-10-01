@@ -79,6 +79,6 @@ void vision_overlay(uint8_t *f, unsigned w, unsigned h, unsigned stride,
                        d->confidence_percent);
         text(f,w,h,stride,left,top >= 18 ? top-18 : top+2,label);
     }
-    (void)snprintf(label,sizeof label,"VISION V2 COUNT %d PROC %u MS",count,ms);
+    (void)snprintf(label,sizeof label,"VISION V3 COUNT %d PROC %u MS",count,ms);
     text(f,w,h,stride,8,8,label);
 }

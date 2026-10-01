@@ -384,7 +384,7 @@ int main()
 
 	xil_printf("color_test camera diagnostic start\r\n");
 	xil_printf("Camera recovery: RAW10 single-frame capture\r\n");
-	xil_printf("Vision PS v2: complete frames, HDMI overlay, frame-driven processing\r\n");
+	xil_printf("Vision PS v3: PC-aligned masks, HDMI overlay, frame-driven processing\r\n");
 	xil_printf("ISP: effective RGGB, gamma 1/1.8, WB 1.5/1/1.5, highlight disabled in matched PL\r\n");
 	xil_printf("Focus: mechanically adjust the lens if this is a fixed-focus module\r\n");
 

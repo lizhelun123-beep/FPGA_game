@@ -14,15 +14,18 @@
 #define GRID_MAX_W 320
 #define GRID_MAX_H 180
 #define GRID_MAX_PIXELS (GRID_MAX_W * GRID_MAX_H)
+#define FRAME_MAX_W (GRID_MAX_W * VISION_SAMPLE_STEP)
+#define FRAME_MAX_H (GRID_MAX_H * VISION_SAMPLE_STEP)
+#define FRAME_MAX_PIXELS (FRAME_MAX_W * FRAME_MAX_H)
 
-#define BIT_YELLOW  (1U << 0)
-#define BIT_BLUE    (1U << 1)
-#define BIT_ORANGE  (1U << 2)
-#define BIT_GREEN   (1U << 3)
-#define BIT_MAGENTA (1U << 4)
-#define BIT_BLACK   (1U << 5)
-#define BIT_WHITE   (1U << 6)
-#define BIT_WALL    (1U << 7)
+#define BIT_YELLOW  VISION_MASK_YELLOW
+#define BIT_BLUE    VISION_MASK_BLUE
+#define BIT_ORANGE  VISION_MASK_ORANGE
+#define BIT_GREEN   VISION_MASK_GREEN
+#define BIT_MAGENTA VISION_MASK_MAGENTA
+#define BIT_BLACK   VISION_MASK_BLACK
+#define BIT_WHITE   VISION_MASK_WHITE
+#define BIT_WALL    VISION_MASK_WALL
 
 #define PI_F 3.14159265358979323846f
 
@@ -39,6 +42,7 @@ typedef struct {
     uint64_t sum_xy;
     uint64_t sum_v;
     uint32_t perimeter;
+    uint32_t v_histogram[256];
 } Component;
 
 typedef struct {
@@ -66,6 +70,8 @@ typedef struct {
 static uint8_t pixel_masks[GRID_MAX_PIXELS];
 static uint8_t pixel_v[GRID_MAX_PIXELS];
 static uint8_t visited[GRID_MAX_PIXELS];
+static uint8_t full_masks[FRAME_MAX_PIXELS];
+static uint8_t morphology_scratch[FRAME_MAX_PIXELS];
 static uint32_t queue_storage[GRID_MAX_PIXELS];
 
 static int in_range(int value, int low, int high)
@@ -73,8 +79,14 @@ static int in_range(int value, int low, int high)
     return value >= low && value <= high;
 }
 
-static void bgr_to_hsv(uint8_t b, uint8_t g, uint8_t r,
-                       uint8_t *h_out, uint8_t *s_out, uint8_t *v_out)
+static int divide_round_nearest(int numerator, int denominator)
+{
+    if (numerator >= 0) return (numerator + denominator / 2) / denominator;
+    return -((-numerator + denominator / 2) / denominator);
+}
+
+void vision_bgr_to_hsv_pixel(uint8_t b, uint8_t g, uint8_t r,
+                             uint8_t *h_out, uint8_t *s_out, uint8_t *v_out)
 {
     int maximum = r;
     int minimum = r;
@@ -87,16 +99,16 @@ static void bgr_to_hsv(uint8_t b, uint8_t g, uint8_t r,
     if (g < minimum) minimum = g;
     if (b < minimum) minimum = b;
     difference = maximum - minimum;
-    saturation = maximum ? (difference * 255 + maximum / 2) / maximum : 0;
+    saturation = maximum ? divide_round_nearest(difference * 255, maximum) : 0;
     if (difference == 0) {
         hue = 0;
     } else if (maximum == r) {
-        hue = (30 * ((int)g - (int)b)) / difference;
+        hue = divide_round_nearest(30 * ((int)g - (int)b), difference);
         if (hue < 0) hue += 180;
     } else if (maximum == g) {
-        hue = 60 + (30 * ((int)b - (int)r)) / difference;
+        hue = 60 + divide_round_nearest(30 * ((int)b - (int)r), difference);
     } else {
-        hue = 120 + (30 * ((int)r - (int)g)) / difference;
+        hue = 120 + divide_round_nearest(30 * ((int)r - (int)g), difference);
     }
     if (hue < 0) hue += 180;
     if (hue > 179) hue -= 180;
@@ -105,7 +117,7 @@ static void bgr_to_hsv(uint8_t b, uint8_t g, uint8_t r,
     *v_out = (uint8_t)maximum;
 }
 
-static uint8_t classify_pixel(uint8_t h, uint8_t s, uint8_t v)
+uint8_t vision_classify_hsv_pixel(uint8_t h, uint8_t s, uint8_t v)
 {
     uint8_t mask = 0;
     if (in_range(h, VISION_YELLOW_H_MIN, VISION_YELLOW_H_MAX) &&
@@ -124,36 +136,88 @@ static uint8_t classify_pixel(uint8_t h, uint8_t s, uint8_t v)
     return mask;
 }
 
+/* OpenCV's 3x3 MORPH_ELLIPSE is a cross. Its default border is true for
+ * erosion and false for dilation, represented here by skipping out-of-frame
+ * neighbors for erosion and considering only in-frame neighbors for dilation. */
+static void erode_cross(const uint8_t *source, uint8_t *destination,
+                        uint32_t grid_w, uint32_t grid_h)
+{
+    uint32_t y;
+    for (y = 0; y < grid_h; ++y) {
+        uint32_t x;
+        for (x = 0; x < grid_w; ++x) {
+            uint32_t index = y * grid_w + x;
+            uint8_t value = source[index];
+            if (x) value &= source[index - 1U];
+            if (x + 1U < grid_w) value &= source[index + 1U];
+            if (y) value &= source[index - grid_w];
+            if (y + 1U < grid_h) value &= source[index + grid_w];
+            destination[index] = value;
+        }
+    }
+}
+
+static void dilate_cross(const uint8_t *source, uint8_t *destination,
+                         uint32_t grid_w, uint32_t grid_h)
+{
+    uint32_t y;
+    for (y = 0; y < grid_h; ++y) {
+        uint32_t x;
+        for (x = 0; x < grid_w; ++x) {
+            uint32_t index = y * grid_w + x;
+            uint8_t value = source[index];
+            if (x) value |= source[index - 1U];
+            if (x + 1U < grid_w) value |= source[index + 1U];
+            if (y) value |= source[index - grid_w];
+            if (y + 1U < grid_h) value |= source[index + grid_w];
+            destination[index] = value;
+        }
+    }
+}
+
+static void morphology_open_close(uint8_t *masks, uint8_t *scratch,
+                                  uint32_t width, uint32_t height)
+{
+#if VISION_MORPHOLOGY_ENABLE
+    erode_cross(masks, scratch, width, height);
+    dilate_cross(scratch, masks, width, height);
+    dilate_cross(masks, scratch, width, height);
+    erode_cross(scratch, masks, width, height);
+#else
+    (void)masks;
+    (void)scratch;
+    (void)width;
+    (void)height;
+#endif
+}
+
 static void create_masks(const uint8_t *frame, uint32_t width, uint32_t height,
                          uint32_t stride, uint32_t grid_w, uint32_t grid_h)
 {
-    uint32_t gy;
-    for (gy = 0; gy < grid_h; ++gy) {
-        uint32_t gx;
-        uint32_t y = gy * VISION_SAMPLE_STEP + 1U;
-        if (y + 1U >= height) y = height - 1U;
-        for (gx = 0; gx < grid_w; ++gx) {
-            uint32_t x = gx * VISION_SAMPLE_STEP + 1U;
-            uint32_t x1;
-            uint32_t y1;
-            const uint8_t *p00;
-            const uint8_t *p01;
-            const uint8_t *p10;
-            const uint8_t *p11;
-            uint8_t b, g, r, h, s, v;
-            uint32_t index = gy * grid_w + gx;
-            if (x + 1U >= width) x = width - 1U;
-            x1 = x + 1U < width ? x + 1U : x;
-            y1 = y + 1U < height ? y + 1U : y;
-            p00 = frame + y * stride + x * 3U;
-            p01 = frame + y * stride + x1 * 3U;
-            p10 = frame + y1 * stride + x * 3U;
-            p11 = frame + y1 * stride + x1 * 3U;
-            b = (uint8_t)(((uint32_t)p00[0] + p01[0] + p10[0] + p11[0] + 2U) / 4U);
-            g = (uint8_t)(((uint32_t)p00[1] + p01[1] + p10[1] + p11[1] + 2U) / 4U);
-            r = (uint8_t)(((uint32_t)p00[2] + p01[2] + p10[2] + p11[2] + 2U) / 4U);
-            bgr_to_hsv(b, g, r, &h, &s, &v);
-            pixel_masks[index] = classify_pixel(h, s, v);
+    uint32_t y;
+    for (y = 0; y < height; ++y) {
+        uint32_t x;
+        for (x = 0; x < width; ++x) {
+            const uint8_t *pixel = frame + y * stride + x * 3U;
+            uint8_t h, s, v;
+            vision_bgr_to_hsv_pixel(pixel[0], pixel[1], pixel[2], &h, &s, &v);
+            full_masks[y * width + x] = vision_classify_hsv_pixel(h, s, v);
+        }
+    }
+    morphology_open_close(full_masks, morphology_scratch, width, height);
+    for (y = 0; y < grid_h; ++y) {
+        uint32_t x;
+        uint32_t source_y = y * VISION_SAMPLE_STEP + 1U;
+        for (x = 0; x < grid_w; ++x) {
+            uint32_t source_x = x * VISION_SAMPLE_STEP + 1U;
+            const uint8_t *pixel = frame + source_y * stride + source_x * 3U;
+            uint8_t b = pixel[0];
+            uint8_t g = pixel[1];
+            uint8_t r = pixel[2];
+            uint8_t v = r > g ? r : g;
+            uint32_t index = y * grid_w + x;
+            if (b > v) v = b;
+            pixel_masks[index] = full_masks[source_y * width + source_x];
             pixel_v[index] = v;
         }
     }
@@ -180,6 +244,7 @@ static void component_add(Component *component, uint32_t x, uint32_t y,
     component->sum_yy += (uint64_t)y * y;
     component->sum_xy += (uint64_t)x * y;
     component->sum_v += value;
+    component->v_histogram[value]++;
 }
 
 static void collect_component(uint32_t seed, uint8_t bit, uint32_t grid_w,
@@ -324,7 +389,7 @@ static int is_white_ring(const MarkerSample *sample)
 }
 
 static int verify_markers(VisionType type, uint8_t body_bit, const Shape *shape,
-                          uint32_t grid_w, uint32_t grid_h)
+                          uint32_t grid_w, uint32_t grid_h, int *angle_deg)
 {
     MarkerSample first;
     MarkerSample second;
@@ -354,40 +419,73 @@ static int verify_markers(VisionType type, uint8_t body_bit, const Shape *shape,
         return fraction(first.black_inner, first.inner_total) >= VISION_BLACK_DISK_MIN &&
                fraction(second.black_inner, second.inner_total) >= VISION_BLACK_DISK_MIN;
     }
-    return (is_white_solid(&first) && is_white_ring(&second)) ||
-           (is_white_ring(&first) && is_white_solid(&second));
+    if (is_white_solid(&first) && is_white_ring(&second)) {
+        *angle_deg = shape->angle_deg;
+        return 1;
+    }
+    if (is_white_ring(&first) && is_white_solid(&second)) {
+        *angle_deg = shape->angle_deg >= 0 ?
+            shape->angle_deg - 180 : shape->angle_deg + 180;
+        return 1;
+    }
+    return 0;
 }
 
 static int geometry_ok(VisionType type, const Shape *shape)
 {
     switch (type) {
     case VISION_MIRROR:
-        return shape->aspect >= 2.0f && shape->aspect <= 7.0f && shape->fill >= 0.50f;
+        return shape->aspect >= VISION_MIRROR_ASPECT_MIN &&
+               shape->aspect <= VISION_MIRROR_ASPECT_MAX &&
+               shape->fill >= VISION_MIRROR_FILL_MIN;
     case VISION_PORTAL_A:
     case VISION_PORTAL_B:
-        return shape->aspect >= 1.8f && shape->aspect <= 6.0f && shape->fill >= 0.48f;
+        return shape->aspect >= VISION_PORTAL_ASPECT_MIN &&
+               shape->aspect <= VISION_PORTAL_ASPECT_MAX &&
+               shape->fill >= VISION_PORTAL_FILL_MIN;
     case VISION_TARGET:
-        return shape->aspect <= 1.8f && shape->fill >= 0.45f && shape->circularity >= 0.20f;
+        return shape->aspect <= VISION_TARGET_ASPECT_MAX &&
+               shape->circularity >= VISION_TARGET_CIRCULARITY_MIN;
     case VISION_SOURCE:
-        return shape->aspect <= 2.5f && shape->fill >= 0.25f;
+        return shape->aspect <= VISION_SOURCE_ASPECT_MAX &&
+               shape->fill >= VISION_SOURCE_FILL_MIN;
     case VISION_WALL:
-        return shape->aspect >= 2.0f && shape->aspect <= 7.0f && shape->fill >= 0.65f;
+        return shape->aspect >= VISION_WALL_ASPECT_MIN &&
+               shape->aspect <= VISION_WALL_ASPECT_MAX &&
+               shape->fill >= VISION_WALL_FILL_MIN;
     default:
         return 0;
     }
 }
 
-static int wall_has_contrast(const Component *component, uint32_t grid_w,
-                             uint32_t grid_h)
+static uint8_t histogram_median(const uint32_t histogram[256], uint32_t count)
 {
-    int x0 = (int)component->min_x - 2;
-    int x1 = (int)component->max_x + 2;
-    int y0 = (int)component->min_y - 2;
-    int y1 = (int)component->max_y + 2;
-    uint64_t outside_sum = 0;
+    uint32_t cumulative = 0;
+    uint32_t target = count / 2U;
+    unsigned int value;
+    for (value = 0; value < 256U; ++value) {
+        cumulative += histogram[value];
+        if (cumulative > target) return (uint8_t)value;
+    }
+    return 255U;
+}
+
+static int wall_has_contrast(const Component *component, const Shape *shape,
+                             uint32_t grid_w, uint32_t grid_h)
+{
+    int padding = (int)lroundf(shape->minor * 0.15f);
+    int x0;
+    int x1;
+    int y0;
+    int y1;
+    uint32_t outside_histogram[256] = {0};
     uint32_t outside_count = 0;
-    float inside_mean = (float)component->sum_v / (float)component->count;
     int y;
+    if (padding < 2) padding = 2;
+    x0 = (int)component->min_x - padding;
+    x1 = (int)component->max_x + padding;
+    y0 = (int)component->min_y - padding;
+    y1 = (int)component->max_y + padding;
     for (y = y0; y <= y1; ++y) {
         int x;
         if (y < 0 || y >= (int)grid_h) continue;
@@ -395,12 +493,14 @@ static int wall_has_contrast(const Component *component, uint32_t grid_w,
             if (x < 0 || x >= (int)grid_w) continue;
             if (x >= (int)component->min_x && x <= (int)component->max_x &&
                 y >= (int)component->min_y && y <= (int)component->max_y) continue;
-            outside_sum += pixel_v[(uint32_t)y*grid_w+(uint32_t)x];
+            outside_histogram[pixel_v[(uint32_t)y*grid_w+(uint32_t)x]]++;
             outside_count++;
         }
     }
     return outside_count >= 20U &&
-           (float)outside_sum/(float)outside_count - inside_mean >= VISION_WALL_CONTRAST_MIN;
+           (float)histogram_median(outside_histogram, outside_count) -
+           (float)histogram_median(component->v_histogram, component->count) >=
+           VISION_WALL_CONTRAST_MIN;
 }
 
 static int boxes_overlap_wall(const VisionDetection *detections, int count,
@@ -426,14 +526,15 @@ static int boxes_overlap_wall(const VisionDetection *detections, int count,
         y1 = detections[i].bbox_y+detections[i].bbox_h < wy1 ?
              detections[i].bbox_y+detections[i].bbox_h : wy1;
         overlap = (x1>x0 && y1>y0) ? (x1-x0)*(y1-y0) : 0;
-        if (overlap * 5 > wall_area) return 1;
+        if ((uint32_t)overlap * 100U >
+            (uint32_t)wall_area * VISION_WALL_COLORED_OVERLAP_PERCENT) return 1;
     }
     return 0;
 }
 
 static void fill_detection(VisionDetection *detection, VisionType type,
                            const Component *component, const Shape *shape,
-                           uint32_t width, uint32_t height)
+                           uint32_t width, uint32_t height, int angle_deg)
 {
     uint32_t x1 = (component->max_x+1U) * VISION_SAMPLE_STEP;
     uint32_t y1 = (component->max_y+1U) * VISION_SAMPLE_STEP;
@@ -446,7 +547,7 @@ static void fill_detection(VisionDetection *detection, VisionType type,
     if (y1 > height) y1 = height;
     detection->bbox_w = (int)x1 - detection->bbox_x;
     detection->bbox_h = (int)y1 - detection->bbox_y;
-    detection->angle_deg = type == VISION_TARGET ? 0 : shape->angle_deg;
+    detection->angle_deg = type == VISION_TARGET ? 0 : angle_deg;
     detection->confidence_percent =
         type == VISION_WALL ? 75 : (type == VISION_SOURCE ? 80 : (type == VISION_TARGET ? 96 : 99));
     detection->sampled_area = component->count;
@@ -471,7 +572,8 @@ int vision_detect_bgr888(const uint8_t *frame, uint32_t width, uint32_t height,
         height < VISION_SAMPLE_STEP || stride < width*3U) return -1;
     grid_w = width / VISION_SAMPLE_STEP;
     grid_h = height / VISION_SAMPLE_STEP;
-    if (grid_w > GRID_MAX_W || grid_h > GRID_MAX_H) return -2;
+    if (grid_w > GRID_MAX_W || grid_h > GRID_MAX_H ||
+        width > FRAME_MAX_W || height > FRAME_MAX_H) return -2;
     create_masks(frame, width, height, stride, grid_w, grid_h);
     for (body_index = 0; body_index < 6 && result_count < output_capacity; ++body_index) {
         uint8_t bit = body_bits[body_index];
@@ -484,21 +586,26 @@ int vision_detect_bgr888(const uint8_t *frame, uint32_t width, uint32_t height,
             Shape shape;
             int geometry_pass;
             int marker_pass;
+            int angle_deg;
             if (visited[seed] || !(pixel_masks[seed] & bit)) continue;
             collect_component(seed, bit, grid_w, grid_h, &component);
             if (component.count < VISION_MIN_COMPONENT_SAMPLES ||
+                component.count * VISION_SAMPLE_STEP * VISION_SAMPLE_STEP >
+                    width * height * VISION_MAX_FRAME_FRACTION_PERCENT / 100U ||
                 !describe_component(&component, &shape)) continue;
+            angle_deg = shape.angle_deg;
             geometry_pass = geometry_ok(type, &shape);
             marker_pass = geometry_pass ?
-                verify_markers(type, bit, &shape, grid_w, grid_h) : 0;
+                verify_markers(type, bit, &shape, grid_w, grid_h, &angle_deg) : 0;
             TRACE("candidate %s n=%u aspect=%.2f fill=%.2f circ=%.2f geometry=%d marker=%d\n",
                   vision_type_name(type), component.count, shape.aspect,
                   shape.fill, shape.circularity, geometry_pass, marker_pass);
             if (!geometry_pass || !marker_pass) continue;
             if (type == VISION_WALL &&
-                (!wall_has_contrast(&component, grid_w, grid_h) ||
+                (!wall_has_contrast(&component, &shape, grid_w, grid_h) ||
                  boxes_overlap_wall(output, result_count, &component))) continue;
-            fill_detection(&output[result_count++], type, &component, &shape, width, height);
+            fill_detection(&output[result_count++], type, &component, &shape,
+                           width, height, angle_deg);
         }
     }
     return result_count;

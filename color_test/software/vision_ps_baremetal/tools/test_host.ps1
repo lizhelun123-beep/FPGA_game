@@ -13,4 +13,6 @@ $output = Join-Path $env:TEMP "vision_ps_host_test.exe"
   -lm -o $output
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $output
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+python (Join-Path $testRoot test_pc_parity.py)
 exit $LASTEXITCODE

@@ -44,7 +44,7 @@ set size_tool [file join $::env(XILINX_VITIS) gnu aarch32 nt gcc-arm-none-eabi b
 set sources [concat [glob [file join $src *.c]] [glob [file join $src i2c *.c]] \
     [glob [file join $src dynclk *.c]] [glob [file join $src display_ctrl *.c]]]
 set command [list $compiler -mcpu=cortex-a9 -mfpu=vfpv3 -mfloat-abi=hard \
-    -O2 -g3 -Wall -Wextra -ffunction-sections -fdata-sections \
+    -O2 -g3 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
     -I[file join $bsp include] -I$src -L[file join $bsp lib] \
     -specs=[file join $src Xilinx.spec] -T[file join $src lscript.ld] \
     {*}$sources -Wl,--gc-sections -Wl,-Map=$map \

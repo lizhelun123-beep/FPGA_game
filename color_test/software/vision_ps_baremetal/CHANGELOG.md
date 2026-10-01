@@ -34,3 +34,11 @@
 - 官方 S2MM VSIZE 宏及配置高度替代读回重写；校验尺寸、stride 和帧地址；未改 PC/PS 识别阈值或 PL。
 - 流水线故障注入、原识别/overlay 主机测试、ARM 严格编译通过；ELF text/data/bss 为 107513/3264/19091264 字节。
 - BIT/XSA/PS init/ELF 新鲜度通过，XSA 内 BIT/PS init 与实际文件一致。未连接或烧录板卡，物理可见性与黑屏阶段尚待另行授权验收。
+
+## 2026-10-02：PS 识别与 PC 黄金参考对齐
+
+- 默认 HSV 阈值恢复为 `pc_vision/config.py`，低对比度阈值改为显式编译 profile。
+- BGR→HSV 改为 OpenCV 近似舍入；全分辨率 packed masks 增加 3×3 open/close 后再 4×采样。
+- 对齐候选上限、几何阈值、WALL 中位数背景对比和 10% 彩色重叠限制；Portal 角度改为实心圆指向圆环。
+- 增加 PC↔C 像素、阈值 ±1、Hue wrap、六类、bbox/center、stride、组合优先级和边缘 parity 测试。
+- Cortex-A9 以 `-Wall -Wextra -Werror` 重建通过；未修改 PL，未连接、检测或烧录开发板。

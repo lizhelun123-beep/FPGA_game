@@ -1,8 +1,8 @@
-# Zynq PS 裸机视觉识别临时版
+# Zynq PS 裸机视觉识别
 
 本目录是从 `color_test/software/mipi_hdmi/mipi_hdmi/src` 独立复制出的临时上板程序，原摄像头应用保持不变。v2 同步修改 PL 颜色模块，关闭固定颜色替换，需要重建匹配的 BIT/XSA。程序识别 MIRROR、PORTAL_A、PORTAL_B、TARGET、SOURCE 和 WALL，结果同时输出 HDMI 和 UART1。
 
-当前为 v2：完整帧交接、HDMI 标注和逐帧识别。不依赖 Python、OpenCV、Linux、神经网络或 OCR。下载方式为 JTAG 临时运行，掉电后失效。
+当前为 v3：完整帧交接、HDMI 标注、逐帧识别，并按 `pc_vision/` 对齐默认 HSV、全分辨率形态学和关键几何语义。不依赖 Python、OpenCV、Linux、神经网络或 OCR。
 
 ## 目录
 
@@ -32,7 +32,7 @@ BIT/LTX。硬件构建成功后会把匹配的 BIT/LTX 复制到 `color_test/bui
 
 - 输入：1280×720、BGR888。
 - VDMA 行跨度：5760 字节，即 `1920 * 3`，不能按 `1280 * 3` 读取下一行。
-- 采样：水平和垂直每 4 像素取样一次，逻辑分辨率为 320×180。
+- mask：先在 1280×720 全分辨率执行 BGR→HSV、阈值和 OpenCV 3×3 椭圆核等价的 open/close，再每 4 像素采样为 320×180 连通域网格。
 - 采集缓冲区独占 frame 0；S2MM 单帧完成并停机后，CPU invalidate 并复制至空闲显示缓冲区。
 - 显示缓冲区 frame 1/2 交替使用，CPU 分析与标注完成后 flush，再等待 MM2S 当前帧指针确认换帧，才允许复用旧缓冲区。
 - 输出：HDMI 叠加 bbox、中心十字、类型、CONF（百分数）；左上角显示 VISION V2、COUNT 和 PROC 耗时。PROC 不含等待换帧时间，不代表完整显示 FPS。
@@ -50,7 +50,7 @@ VISION WALL cx=800 cy=288 bbox=648,252,304,76 angle=0 confidence=75 area=...
 
 ## 识别规则
 
-处理顺序是 BGR 转 OpenCV 标度 HSV、独立颜色 mask、8 邻域连通域、面积过滤、矩和协方差几何量、marker 验证。角度来自连通域主轴，不依赖多边形顶点数。
+处理顺序是 BGR 转 OpenCV 标度 HSV、独立颜色 mask、全分辨率 3×3 open/close、4×4 间隔采样、8 邻域连通域、面积过滤、矩和协方差几何量、marker 验证。角度来自连通域主轴，不依赖多边形顶点数；Portal 方向为实心圆指向圆环。
 
 - MIRROR：黄色长条为候选，主轴两端必须分别有黑色实心区域。
 - PORTAL_A：蓝色胶囊候选，一端为白色实心圆，另一端为白色环且环中心仍为蓝色。
@@ -72,7 +72,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\color_test\software\vision
 预期输出：
 
 ```text
-vision_ps host tests passed
+vision_ps host tests passed (including overlay clipping)
+....
+OK
 ```
 
 测试脚本将可执行文件放在系统临时目录，不修改测试图像或原摄像头工程。
@@ -88,7 +90,7 @@ vision_ps host tests passed
 脚本使用当前 `color_test/color_test.xsa` 创建 standalone BSP，直接编译本目录源码，并打印 ARM ELF 的 size。2026-10-01 黑屏防护修改后的离线构建结果为：
 
 ```text
-text=107513, data=3264, bss=19091264 bytes
+text=108153, data=3264, bss=20934464 bytes
 ```
 
 较大的 BSS 主要来自原摄像头程序的 DDR 帧缓冲区。视觉算法使用固定静态工作区，不执行动态内存分配。
@@ -132,8 +134,8 @@ Remove-Item Env:VISION_JTAG_CHECK_ONLY
 ## v2 帧管理与已知限制
 
 - 当前采用单帧采集后停机，而非全速视频环形采集；PS 复制后即重新启动 S2MM。显示重复最近一张已处理图像，帧率取决于采集、复制、算法及 HDMI 换帧耗时，不承诺 60 fps。
-- 4×采样优先降低 PS 负载，小目标 marker 可能只有少量采样点。
-- 嵌入式版没有移植 PC 端的形态学开闭运算和轮廓层级；marker 使用主轴端点/中心的局部采样比例。
+- 全分辨率 mask 已有 3×3 开闭运算，但候选仍为 4×采样连通域；小目标 marker 可能只有少量采样点。
+- 嵌入式版没有 PC 端轮廓/孔洞层级；marker 使用主轴端点/中心的局部采样比例。
 - SOURCE 目前没有强制黑边验证；WALL 仍最依赖现场曝光、灰卡背景和阈值。
 - CONF 沿用规则评分，不是概率；没有逐 marker 轮廓绘制。检测为零时仍有状态栏。
 - 合成帧测试和 ARM 编译已经通过；真实识别精度仍需用板卡串口日志和未标注原始相机画面继续标定。
@@ -181,3 +183,54 @@ python .\color_test\software\vision_ps_baremetal\tests\test_video_pipeline.py
 地址/stride 错配，以及无 VSIZE 读回时重启仍写入 720。临时文件在 build 下自动清理。
 本次 ARM `-Wall -Wextra -Werror` 编译、故障注入和既有算法/overlay 主机测试均通过；
 CHECK_ONLY 新鲜度通过，XSA 内 BIT、PS init 与实际文件哈希一致。未烧录、未上板验收。
+
+## PC_VISION_SPEC 与移植对照
+
+黄金参考是 `pc_vision/config.py`、`detector.py` 和
+`body_refinement.py` 的默认配置；`camera_low_contrast.json` 只是可选试调
+profile，不是默认规范。PS 可通过 `VISION_USE_LOW_CONTRAST_PROFILE=1` 显式选择
+同一 profile，默认值为 0。
+
+- 输入是任意处理分辨率的 BGR888；本板固定 1280×720，active width 3840 bytes，
+  DDR stride 5760 bytes。OpenCV 调用是 `COLOR_BGR2HSV`，H=0..179，S/V=0..255。
+- 每个颜色的多个闭区间先分别 `inRange` 再按位 OR。默认阈值为：
+  yellow 20..36/90..255/70..255，blue 90..130/85..255/45..255，
+  orange 4..19/100..255/80..255，green 37..89/70..255/45..255，
+  magenta 135..179 或 0..3/S>=65/V>=60，black V<=65，
+  white S<=65/V>=175；WALL 独立为 S<=110/V<=120。
+- 每个 mask 使用 3×3 `MORPH_ELLIPSE`、open 一次、close 一次。PS 在全分辨率 packed
+  masks 上做相同 cross kernel 与边界语义，随后每 4 像素取样进入 320×180 网格。
+- PC 主体候选使用 `findContours(RETR_EXTERNAL, CHAIN_APPROX_SIMPLE)`；
+  marker 与 SOURCE 黑边使用 `RETR_CCOMP`。面积为 `contourArea`，周长为闭合
+  `arcLength`；当前分类不调用 `approxPolyDP`，SOURCE 仅用
+  `minEnclosingTriangle` 加少量置信分。
+- PC bbox 是 `boundingRect`；中心优先使用 contour `moments` 面积质心；长宽比、
+  fill 和主轴来自 `minAreaRect`。长轴角范围 [-90,90)，图像坐标顺时针为正。
+  Portal 角从实心圆指向圆环，Target 固定为 0。
+- marker 必须位于主体填充轮廓内。MIRROR 要求长轴两端黑色实心圆；Portal 要求两端
+  白色实心圆+白环且环心保持主体色；Target 要求中心白环及近同心黑心。
+- WALL 使用内部/外围 V 中位数差至少 12，深灰填充率至少 0.80，并拒绝与已接受彩色
+  主体重叠超过 10% 的候选。分类顺序为 MIRROR、PORTAL_A、PORTAL_B、TARGET、
+  SOURCE、WALL；无通用 NMS，仅已接受彩色对象抑制重复 WALL。
+- 输出坐标是处理图像左上角原点的像素坐标。PS bbox/center 从 sampled grid 乘 4
+  回到 1280×720；`sampled_area` 明确保持 sampled-cell 单位，不冒充像素²。
+
+| 功能 | PC | PS v3 | 状态 |
+| --- | --- | --- | --- |
+| BGR/HSV、Hue wrap、阈值闭区间 | OpenCV + 默认配置 | 舍入误差允许 1；默认阈值一致 | EQUIVALENT |
+| mask open/close | 全分辨率 3×3 ellipse | 全分辨率 packed cross | EQUIVALENT |
+| 主体提取 | 外轮廓 | 4× sampled 8 邻域连通域 | APPROXIMATE |
+| contour hierarchy | marker/SOURCE 使用 CCOMP | 无层级树 | MISSING |
+| 面积 | contour 像素² | sampled cells，13 cells≈208 px | DIFFERENT |
+| bbox/center | contour bbox/moments | sampled bbox/均值还原 | APPROXIMATE |
+| angle | minAreaRect；Portal 有方向 | 协方差主轴；Portal 方向已对齐 | APPROXIMATE |
+| marker | ROI 轮廓、孔洞、圆度、同心度 | 主轴端点/中心局部比例采样 | PARTIAL |
+| SOURCE 黑边 | 闭合黑边恢复定位 | 仅品红主体 | MISSING |
+| WALL 背景条件 | 中位数、填充、silhouette overlap | 中位数、bbox overlap | APPROXIMATE |
+| 类别顺序 | 六类固定顺序 | 相同 | EQUIVALENT |
+| overlay | PC 调试绘制 | 独立 HDMI bbox/中心/状态栏 | NOT APPLICABLE |
+
+主机 parity 测试覆盖纯红/绿/蓝、灰/白/黑、Hue wrap、全部阈值上下界 ±1、
+六类目标、组合优先级、frame edge、非紧密 stride、bbox/center 容差和 overlay
+padding/clipping。PC 使用 200 px² 最小 contour 面积；PS 的 4×4 采样使该边界量化为
+12 cells=192 px 与 13 cells=208 px，无法声称 199/200/201 像素逐点等价。

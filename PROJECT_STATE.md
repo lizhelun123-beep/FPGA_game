@@ -89,3 +89,34 @@ Vivado 2023.1 已重新完成 BayerToRGB 与 subset converter 的 OOC 综合，�
 综合日志确认 Bayer 实际读取 `color_test.gen/sources_1/bd/system/ipshared/e9e4/hdl/AXI_BayerToRGB.vhd`。
 重新下载该版本后，OV5640 HDMI 画面颜色已实板确认正确，红、蓝通道不再互换。
 本记录只代表当前 bitstream 的颜色验收，不替代后续冷启动/Reset 稳定性测试。
+
+## AX7020B Vision Migration
+
+- PC reference analysis: PASS — 默认 `pc_vision/config.py`、`detector.py`、
+  `body_refinement.py` 已形成 PC_VISION_SPEC；没有 PC 实拍图片，验证仅使用代码语义与合成数据。
+- Architecture: PS 裸机识别保持不变；PL 只负责 RAW10/ISP/VDMA 视频链。
+- HDMI color bar: PASS / previously verified
+- Input frame path: S2MM frame 0 完整帧完成并 HALTED 后 invalidate；active 3840 bytes/行按
+  stride 5760 复制到空闲 frame 1/2，检测/overlay 后 flush 并确认 MM2S 换帧。
+- RGB/BGR order: BGR888；单像素 PC↔C 测试覆盖红、绿、蓝、灰、白、黑。
+- HSV conversion: OpenCV H=0..179、S/V=0..255；C 使用近似舍入，合成样本误差 ≤1；
+  默认阈值、闭区间和 magenta Hue wrap 已对齐。
+- Color detection: 全分辨率 packed masks 执行 3×3 ellipse 等价 open/close，再 4×采样。
+- Shape detection: PS 仍用 8 邻域连通域、协方差主轴近似 OpenCV 外轮廓/minAreaRect。
+- Marker validation: MIRROR/Portal/Target 使用局部端点或中心比例采样；Portal 角度为实心圆指向圆环。
+- Bounding box: sampled grid ×4 并裁剪到 1280×720；SOURCE 不恢复 PC 的闭合黑边。
+- Overlay: 与检测分离，只绘制到待提交 display frame；bbox、中心、状态栏与 padding clipping 测试通过。
+- AXI stream: NOT CHANGED — PS 软件识别，不新增 recognition RTL；现有 PL ISP 未 bypass。
+- Host tests: PASS — PC 20 项；PC↔C parity 5 项；C detection/overlay；视频流水线故障注入。
+- RTL simulation: NOT REQUIRED — PL UNCHANGED
+- ARM build: PASS — Vitis 2023.1，`-Wall -Wextra -Werror`，
+  text/data/bss=108153/3264/20934464；XSA/ELF 新鲜度 PASS。
+- Synthesis: NOT REQUIRED — PL UNCHANGED
+- Implementation: NOT REQUIRED — PL UNCHANGED
+- Bitstream: NOT REQUIRED — PL UNCHANGED
+- Hardware verification: NOT PERFORMED BY REQUEST
+- Known differences: 4×坐标/面积量化；连通域不是 contour；无 marker/SOURCE contour hierarchy；
+  marker 圆度/同心度仅局部近似；SOURCE 黑边恢复缺失；WALL overlap 用 bbox 近似 silhouette；
+  sampled 主轴/周长不是 OpenCV minAreaRect/arcLength；无真实图片精度结论。
+- Next hardware test: 先确认 CSI 长包持续增长、CRC 无新增、S2MM 完成完整帧，再确认
+  `FIRST_CAMERA_FRAME_COMMITTED` 和 HDMI overlay。

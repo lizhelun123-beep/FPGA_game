@@ -3,7 +3,9 @@
 
 /* OpenCV-compatible scale: H=0..179, S/V=0..255. */
 #define VISION_SAMPLE_STEP 4
-#define VISION_MIN_COMPONENT_SAMPLES 12U
+#define VISION_MIN_COMPONENT_SAMPLES 13U
+#define VISION_MAX_FRAME_FRACTION_PERCENT 85U
+#define VISION_MORPHOLOGY_ENABLE 1
 
 #define VISION_YELLOW_H_MIN 20
 #define VISION_YELLOW_H_MAX 36
@@ -12,17 +14,14 @@
 
 #define VISION_BLUE_H_MIN 90
 #define VISION_BLUE_H_MAX 130
-#define VISION_BLUE_S_MIN 55
 #define VISION_BLUE_V_MIN 45
 
 #define VISION_ORANGE_H_MIN 4
 #define VISION_ORANGE_H_MAX 19
-#define VISION_ORANGE_S_MIN 65
 #define VISION_ORANGE_V_MIN 80
 
 #define VISION_GREEN_H_MIN 37
 #define VISION_GREEN_H_MAX 89
-#define VISION_GREEN_S_MIN 25
 #define VISION_GREEN_V_MIN 45
 
 #define VISION_MAGENTA_H_MIN 135
@@ -30,12 +29,46 @@
 #define VISION_MAGENTA_S_MIN 65
 #define VISION_MAGENTA_V_MIN 60
 
+/* Match pc_vision/config.py by default. The optional profile matches
+ * pc_vision/camera_low_contrast.json and must be selected explicitly. */
+#ifndef VISION_USE_LOW_CONTRAST_PROFILE
+#define VISION_USE_LOW_CONTRAST_PROFILE 0
+#endif
+#if VISION_USE_LOW_CONTRAST_PROFILE
+#define VISION_BLUE_S_MIN 55
+#define VISION_ORANGE_S_MIN 65
+#define VISION_GREEN_S_MIN 25
 #define VISION_BLACK_V_MAX 115
 #define VISION_WHITE_S_MAX 85
 #define VISION_WHITE_V_MIN 150
+#else
+#define VISION_BLUE_S_MIN 85
+#define VISION_ORANGE_S_MIN 100
+#define VISION_GREEN_S_MIN 70
+#define VISION_BLACK_V_MAX 65
+#define VISION_WHITE_S_MAX 65
+#define VISION_WHITE_V_MIN 175
+#endif
 #define VISION_WALL_S_MAX 110
 #define VISION_WALL_V_MAX 120
 #define VISION_WALL_CONTRAST_MIN 12.0f
+
+#define VISION_MIRROR_ASPECT_MIN 2.2f
+#define VISION_MIRROR_ASPECT_MAX 6.5f
+#define VISION_MIRROR_FILL_MIN 0.65f
+#define VISION_PORTAL_ASPECT_MIN 2.0f
+#define VISION_PORTAL_ASPECT_MAX 5.5f
+#define VISION_PORTAL_FILL_MIN 0.60f
+#define VISION_TARGET_ASPECT_MAX 1.65f
+/* The sampled 4-neighbor perimeter is not cv2.arcLength; 0.20 corresponds
+ * to about 0.60 for the full-resolution contour fixtures. */
+#define VISION_TARGET_CIRCULARITY_MIN 0.20f
+#define VISION_SOURCE_ASPECT_MAX 2.5f
+#define VISION_SOURCE_FILL_MIN 0.30f
+#define VISION_WALL_ASPECT_MIN 2.2f
+#define VISION_WALL_ASPECT_MAX 6.5f
+#define VISION_WALL_FILL_MIN 0.70f
+#define VISION_WALL_COLORED_OVERLAP_PERCENT 10U
 
 #define VISION_ENDPOINT_OFFSET 0.37f
 #define VISION_MARKER_RADIUS 0.30f

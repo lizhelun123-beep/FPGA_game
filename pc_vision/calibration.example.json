@@ -1,0 +1,11 @@
+{
+  "samples": [
+    {"image": "photos/frame001.png", "color": "yellow", "roi": [100, 100, 20, 20]},
+    {"image": "photos/frame001.png", "color": "blue", "roi": [200, 100, 20, 20]},
+    {"image": "photos/frame001.png", "color": "orange", "roi": [300, 100, 20, 20]},
+    {"image": "photos/frame002.png", "color": "green", "roi": [100, 100, 20, 20]},
+    {"image": "photos/frame002.png", "color": "magenta", "roi": [200, 100, 20, 20]},
+    {"image": "photos/frame002.png", "color": "black", "roi": [300, 100, 20, 20]},
+    {"image": "photos/frame002.png", "color": "white", "roi": [400, 100, 20, 20]}
+  ]
+}

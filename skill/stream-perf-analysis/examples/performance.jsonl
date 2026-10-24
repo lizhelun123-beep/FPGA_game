@@ -1,0 +1,62 @@
+{"connection":1,"report":24,"stage":"capture_wait","n":1256,"total":5072,"maximum":1008,"unit":"us"}
+{"connection":1,"report":24,"stage":"invalidate","n":1256,"total":7570827,"maximum":6029,"unit":"us"}
+{"connection":1,"report":24,"stage":"pixel_check","n":1256,"total":29674,"maximum":25,"unit":"us"}
+{"connection":1,"report":24,"stage":"copy","n":1256,"total":9533790,"maximum":7646,"unit":"us"}
+{"connection":1,"report":24,"stage":"detect_six","n":1256,"total":712544248,"maximum":2054455,"unit":"us"}
+{"connection":1,"report":24,"stage":"ray","n":1256,"total":10509,"maximum":17,"unit":"us"}
+{"connection":1,"report":24,"stage":"overlay","n":1256,"total":687416,"maximum":1435,"unit":"us"}
+{"connection":1,"report":24,"stage":"flush","n":1256,"total":7704772,"maximum":6173,"unit":"us"}
+{"connection":1,"report":24,"stage":"display_wait","n":1256,"total":11012906,"maximum":16998,"unit":"us"}
+{"connection":1,"report":24,"stage":"publish","n":1256,"total":3733,"maximum":4,"unit":"us"}
+{"connection":1,"report":24,"stage":"encode","n":657,"total":6621,"maximum":19,"unit":"us"}
+{"connection":1,"report":24,"stage":"uart_service","n":10514,"total":30581,"maximum":16,"unit":"us"}
+{"connection":1,"report":24,"stage":"poll_gap","n":10514,"total":759284935,"maximum":2075698,"unit":"us"}
+{"connection":1,"report":24,"stage":"queue_age","n":657,"total":4335956,"maximum":24355,"unit":"us"}
+{"connection":1,"report":24,"stage":"fifo_span","n":658,"total":496117214,"maximum":2452856,"unit":"us"}
+{"connection":1,"report":24,"stage":"wire_idle_upper","n":658,"total":744742856,"maximum":3295834,"unit":"us"}
+{"connection":1,"report":24,"stage":"process","n":1255,"total":748735844,"maximum":2082597,"unit":"us"}
+{"connection":1,"report":24,"stage":"loop","n":1255,"total":748743248,"maximum":2082603,"unit":"us"}
+{"connection":1,"report":24,"stage":"recovery","n":1,"total":5093934,"maximum":5093934,"unit":"us"}
+{"connection":1,"report":24,"stage":"retry","n":0,"total":0,"maximum":0,"unit":"us"}
+{"connection":1,"report":24,"stage":"sleep","n":11,"total":8025465,"maximum":1003233,"unit":"us"}
+{"connection":1,"report":24,"stage":"report","n":713,"total":11352,"maximum":20,"unit":"us"}
+{"connection":1,"report":24,"stage":"capture_fail","n":0,"total":0,"maximum":0,"unit":"us"}
+{"connection":1,"report":24,"stage":"process_fail","n":0,"total":0,"maximum":0,"unit":"us"}
+{"connection":1,"report":24,"stage":"hold","n":0,"total":0,"maximum":0,"unit":"us"}
+{"connection":1,"report":24,"stage":"meta_f0","n":1256,"total":758982,"maximum":759404448,"unit":"see firmware README"}
+{"connection":1,"report":24,"stage":"meta_f1","n":657,"total":758530187,"maximum":759404466,"unit":"see firmware README"}
+{"connection":1,"report":24,"stage":"meta_f2","n":657,"total":759414628,"maximum":1254,"unit":"see firmware README"}
+{"connection":1,"report":24,"stage":"meta_f3","n":658,"total":598,"maximum":0,"unit":"see firmware README"}
+{"connection":1,"report":24,"stage":"meta_f4","n":0,"total":109896,"maximum":43493,"unit":"see firmware README"}
+{"connection":1,"report":24,"stage":"meta_f5","n":759414,"total":1082331758844,"maximum":5394478924433,"unit":"see firmware README"}
+{"connection":1,"report":25,"stage":"capture_wait","n":1347,"total":5378,"maximum":1008,"unit":"us"}
+{"connection":1,"report":25,"stage":"invalidate","n":1347,"total":8119355,"maximum":6029,"unit":"us"}
+{"connection":1,"report":25,"stage":"pixel_check","n":1347,"total":31820,"maximum":25,"unit":"us"}
+{"connection":1,"report":25,"stage":"copy","n":1347,"total":10224462,"maximum":7646,"unit":"us"}
+{"connection":1,"report":25,"stage":"detect_six","n":1347,"total":753497419,"maximum":2054455,"unit":"us"}
+{"connection":1,"report":25,"stage":"ray","n":1347,"total":11442,"maximum":17,"unit":"us"}
+{"connection":1,"report":25,"stage":"overlay","n":1347,"total":761662,"maximum":1435,"unit":"us"}
+{"connection":1,"report":25,"stage":"flush","n":1347,"total":8264015,"maximum":6173,"unit":"us"}
+{"connection":1,"report":25,"stage":"display_wait","n":1347,"total":11856947,"maximum":16998,"unit":"us"}
+{"connection":1,"report":25,"stage":"publish","n":1347,"total":4013,"maximum":4,"unit":"us"}
+{"connection":1,"report":25,"stage":"encode","n":688,"total":7153,"maximum":19,"unit":"us"}
+{"connection":1,"report":25,"stage":"uart_service","n":10696,"total":32693,"maximum":16,"unit":"us"}
+{"connection":1,"report":25,"stage":"poll_gap","n":10696,"total":802963953,"maximum":2075698,"unit":"us"}
+{"connection":1,"report":25,"stage":"queue_age","n":688,"total":4522049,"maximum":24355,"unit":"us"}
+{"connection":1,"report":25,"stage":"fifo_span","n":689,"total":530288642,"maximum":2452856,"unit":"us"}
+{"connection":1,"report":25,"stage":"wire_idle_upper","n":689,"total":788420657,"maximum":3295834,"unit":"us"}
+{"connection":1,"report":25,"stage":"process","n":1346,"total":792414361,"maximum":2082597,"unit":"us"}
+{"connection":1,"report":25,"stage":"loop","n":1346,"total":792422304,"maximum":2082603,"unit":"us"}
+{"connection":1,"report":25,"stage":"recovery","n":1,"total":5093934,"maximum":5093934,"unit":"us"}
+{"connection":1,"report":25,"stage":"retry","n":0,"total":0,"maximum":0,"unit":"us"}
+{"connection":1,"report":25,"stage":"sleep","n":11,"total":8025465,"maximum":1003233,"unit":"us"}
+{"connection":1,"report":25,"stage":"report","n":744,"total":11856,"maximum":20,"unit":"us"}
+{"connection":1,"report":25,"stage":"capture_fail","n":0,"total":0,"maximum":0,"unit":"us"}
+{"connection":1,"report":25,"stage":"process_fail","n":0,"total":0,"maximum":0,"unit":"us"}
+{"connection":1,"report":25,"stage":"hold","n":0,"total":0,"maximum":0,"unit":"us"}
+{"connection":1,"report":25,"stage":"meta_f0","n":1347,"total":802661,"maximum":803081025,"unit":"see firmware README"}
+{"connection":1,"report":25,"stage":"meta_f1","n":688,"total":801744235,"maximum":803081039,"unit":"see firmware README"}
+{"connection":1,"report":25,"stage":"meta_f2","n":688,"total":803093645,"maximum":1344,"unit":"see firmware README"}
+{"connection":1,"report":25,"stage":"meta_f3","n":689,"total":658,"maximum":0,"unit":"see firmware README"}
+{"connection":1,"report":25,"stage":"meta_f4","n":0,"total":119004,"maximum":45384,"unit":"see firmware README"}
+{"connection":1,"report":25,"stage":"meta_f5","n":803093,"total":1288490189100,"maximum":5785320948400,"unit":"see firmware README"}

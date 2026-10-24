@@ -45,7 +45,7 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use ieee.math_real.all;
 
-use work.DebugLib.all;
+use work.DphyDebugLib.all;
 
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
@@ -59,6 +59,7 @@ use IEEE.NUMERIC_STD.ALL;
 entity DPHY_LaneSCNN is
    Generic (
       kGenerateMMCM : boolean := false;
+      kBUFH_DDIRECT_M3 : boolean := false;
       kRefClkFreqHz : natural := 200_000_000;
       kAddDelay_ps : integer := 0
    );
@@ -70,6 +71,7 @@ entity DPHY_LaneSCNN is
       RxDDRClkHS : out STD_LOGIC;
       RxByteClkHS : out STD_LOGIC;
       aRxClkActiveHS : out STD_LOGIC;
+      cRxClkActiveHS : out STD_LOGIC; -- RefClk domain; async loss, two-edge release
       aForceRxmode : in STD_LOGIC;
       aStopstate : out STD_LOGIC;
       aEnable : in STD_LOGIC;
@@ -111,6 +113,7 @@ signal cClkSettleTout : std_logic;
 signal cDelayCnt : natural range 0 to MAX(kTInit,MAX(kTClkTermEn, kTClkSettle)) := 0;
 signal aClkLocked, cClkLocked, cHSRst, cDelayCntEn, aHSClkLocked, cHSClkLocked, cHSClkLocked_q, cHSClkLost : std_logic;
 signal cEnable : std_logic;
+signal cRxClkActiveHS_int, cRawClkActiveHS, cClockRecent : std_logic;
 begin
 
 debug.cIntRst <= cIntRst;
@@ -120,7 +123,7 @@ debug.cHSClkLocked <= cHSClkLocked;
 debug.state <= std_logic_vector(to_unsigned(state_type'pos(state), 4));
 debug.cClkSettleTout <= cClkSettleTout;
 
-SyncAsyncEnable: entity work.SyncAsync
+SyncAsyncEnable: entity work.DphySyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2) --use double FF synchronizer
@@ -138,13 +141,13 @@ aRxUlpsClkNot <=     '0' when state = stULPS or state = stULPS_Exit else
                      '1';
 aUlpsActiveNot <=    '0' when state = stULPS else
                      '1';
-aRxClkActiveHS <= aHSClkLocked;                        
+aRxClkActiveHS <= cRxClkActiveHS_int;
 
 -------------------------------------------------------------------------------
 -- Synchronize LP signals into the CtlClk domain, then filter glitches
 -------------------------------------------------------------------------------              
 GenSyncLP: for i in 0 to 1 generate
-   SyncAsyncx: entity work.SyncAsync
+   SyncAsyncx: entity work.DphySyncAsync
       generic map (
          kResetTo => '0',
          kStages => 2) --use double FF synchronizer
@@ -254,6 +257,7 @@ ModeFSM_NextStateProc: process (state, cLP, cClkSettleTout, cClkLocked, cHSClkLo
 HSClockingX: entity work.HS_Clocking
    Generic map (
       kGenerateMMCM => kGenerateMMCM,
+      kBUFH_DDIRECT_M3 => kBUFH_DDIRECT_M3,
       kCtlClkFreqHz => kCtlClkFreqHz,
       kRefClkFreqHz => kRefClkFreqHz,
       kAddDelay_ps => kAddDelay_ps
@@ -265,6 +269,7 @@ HSClockingX: entity work.HS_Clocking
       CtlClk => CtlClk,
       cRst => cHSRst,
       aLocked => aHSClkLocked,
+      cClockRecent => cClockRecent,
       
       dbg_cBUFR_Rst => debug.cBUFR_Rst,
       dbg_cMMCM_Rst => debug.cMMCM_Rst,
@@ -272,13 +277,26 @@ HSClockingX: entity work.HS_Clocking
       dbg_cMMCM_Locked => debug.cMMCM_Locked
    );
 
-SyncAsyncLocked: entity work.SyncAsync
+-- Cross raw byte activity alone. Both inputs to the following qualification
+-- are now RefClk-domain outputs. Watchdog expiry can hide the PPI while byte
+-- clocks are stopped; no mixed-domain LUT feeds this bridge's asynchronous CLR.
+RxClkActiveHSResetBridge: entity work.DphyResetBridge
+   generic map (kPolarity => '0')
+   port map (aRst => aHSClkLocked, OutClk => CtlClk,
+             oRst => cRawClkActiveHS);
+cRxClkActiveHS_int <= cRawClkActiveHS and cClockRecent;
+cRxClkActiveHS <= cRxClkActiveHS_int;
+
+-- Retain the clock lane's own cHSRst and two-stage status history. The input
+-- is now local: lock assertion takes two extra RefClk edges; loss still takes
+-- two edges (or asserts immediately through the existing cHSRst).
+SyncAsyncLocked: entity work.DphySyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2) --use double FF synchronizer
    port map (
       aReset => cHSRst,
-      aIn => aHSClkLocked,
+      aIn => cRxClkActiveHS_int,
       OutClk => CtlClk,
       oOut => cHSClkLocked);
 

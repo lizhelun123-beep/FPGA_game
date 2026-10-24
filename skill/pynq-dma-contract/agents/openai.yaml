@@ -1,0 +1,4 @@
+interface:
+  display_name: "PYNQ 接口与缓冲契约"
+  short_description: "离线核对 Overlay 来源、DMA 布局、缓存同步与缓冲所有权"
+  default_prompt: "使用 $pynq-dma-contract 检查当前项目的 Overlay 与缓冲区契约，先完成离线检查并列出缺失证据。"

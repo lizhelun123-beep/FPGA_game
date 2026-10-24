@@ -2,6 +2,230 @@
 
 独立于 `color_test/` 的 Python + OpenCV 原型。支持图片、USB 摄像头、视频文件。识别 MIRROR、PORTAL_A、PORTAL_B、TARGET、SOURCE、WALL；无神经网络、YOLO、OCR、ArUco 或多边形顶点数分类。
 
+## 板载定位＋电脑实时游戏
+
+板端使用 OV5640 和现有六类 C 检测器，通过 USB-UART 发送 scene-v1 完整场景。
+电脑接收坐标与方向，复用下述固定模型、GameController、GameView 和 canonical
+`ray_game.c`。串口模式不启动电脑识别进程，不传整帧视频。模型尺寸固定，位置和
+有向角度随检测更新；未标定时采用 1280×720 像素坐标，不能解释为毫米。
+
+在仓库根目录安装依赖并启动（COM5 要替换为人工确认的板卡 USB-UART 端口）：
+
+```powershell
+python -m pip install -r pc_vision/requirements.txt
+python pc_vision/app.py --game --serial COM5 --baud 115200
+# 可选：保存已被界面采用的完整场景，目录必须不存在
+python pc_vision/app.py --game --serial COM5 --baud 115200 --output pc_vision/output/live_take01
+```
+
+需要 Python 3.10+、NumPy、OpenCV、pyserial 和 PATH 中的 host GCC（Windows 可用
+MinGW，或 `--cc PATH`）。首次启动严格编译并按内容缓存同一 C 桥接程序。
+UART 为 **115200、8N1、无流控**，与提供的实时固件一致；`--baud` 只配置电脑，
+不会改变板端波特率。关闭占用同一端口的串口终端；程序只打开明确指定的端口，
+不会扫描其他端口。DTR/RTS 在打开前设为 inactive，不主动复位；USB 转接器实际
+电气行为需人工确认。本轮测试使用注入的模拟字节流，未打开真实串口。
+
+接收线程独立于绘图，只保留一份最新完整场景；不逐包排队播放旧位置。解析缓冲
+有界，处理半包、粘包、普通日志、CRC/格式错误和重新同步。断线立即清除跟随场景，
+每 0.5 s 只重试指定端口；每次重连清掉半包和系统旧缓冲，第一份场景重置稳定历史。
+普通日志不参与定位。长时间运行时内存中的结果记录最多 256 条；可选 JSONL
+逐条落盘，记录的是界面采用的场景，不保证记录所有接收到的包。
+
+性能诊断固件开启计时时，同一个接收线程/同一个串口额外识别固定 61 B 的 `@PF1`
+低频诊断。原 `--output 新目录` 同时保存 `performance.jsonl`，无需第二个串口程序；
+无 output 时仅累计接收计数，不缓存诊断历史。记录包含 report/stage_id/stage/n/
+total/maximum、连接编号及电脑单调接收时刻。stat 单位为微秒；meta_f0～meta_f5
+含帧/包/时刻关联，见应用 README 的“板端场景性能计时”。半行不跨重连，诊断不参与
+定位、scene 序号、过期判定或绘图；每份 31 行，服务稀疏时可能超过 5 s 才收齐。
+诊断无独立 CRC，按连接/重启分组检查完整性及累计计数一致性。
+
+人工示例（本轮未打开真实串口）：
+`python pc_vision/app.py --game --serial COM9 --baud 115200 --output pc_vision/output/perf_take01`。
+端口由人工确认，关闭其他同端口终端；固定及移动场景各采集至少 120 s，正常退出，
+保留 performance/scenes/metrics、诊断 BOOT 的 validation 及人工操作时间记录。
+live_monitor01 前 78 条约 1.09 Hz，当前 466 条快照约 1.23 Hz；尚不能解释具体阶段。
+电脑不再频闪不代表板端达成 8～10 Hz 或约 200 ms 响应。
+
+界面底部显示 **LIVE / STALE / DISCONNECTED、Hz RX、场景帧号、RX age**。
+Hz RX 按最近十秒实际接收的完整场景计算（最多 128 个时间戳），和绘制 FPS 分开；
+STALE 不会强制把已测得的低速接收率置零，断线置零。RX age 是距完整包
+接收的电脑单调时钟时间，**不等于曝光到屏幕的端到端延迟**。无效场景显示 STALE
+并立即清空；有效场景超过 0.25 s 无更新时显示 STALE，保留上一份完整场景及光线。
+默认 6 s 无更新才超时清空，
+可用 `--scene-timeout` 或 `game_config.json` 的 `timeout_seconds` 修改。
+SOURCE 缺失/方向无效立即清除跟随光线；
+其他物体短漏检最多保留 0.25 s 并变暗。暂停/锁定会明确冻结显示，现场跟随验收
+应保持 RUNNING、解除锁定。断线或超时不会让旧场景以 LIVE 标识继续运行。
+
+scene-v1 的有效数量零表示本帧确实空场景；valid=0 表示识别/采集不可用；均不携带
+旧坐标。帧号为板端处理观测计数（允许跳号），capture_ms 为该观测处理开始时间，
+并非曝光时间戳。启动先发送 valid=0、frame=tx=capture_ms=0 的 scene-v1 包作为
+重启通知，普通发送从 tx=1 开始。帧号、包序号和毫秒时钟按 u32 环绕比较，重复和
+乱序不刷新年龄。漏掉启动通知时，须先静默至少 1 s，再观察三份递增的低序号、
+低 uptime（<60 s）包，跨至少 0.1 s，才采纳新 epoch；时间前跳也受电脑时间约束。
+协议没有唯一 boot ID，无法从字节本身严格区分任意跨重启重放；本实现依赖 UART
+有序传输、重连清缓冲和启动通知。异常时可人工关闭并重新运行上述指定端口命令。
+
+离线验证：`python -m unittest pc_vision.test_game -v`，26 项通过，覆盖 C 编码/
+Python 解码、非阻塞有界发送、损坏重同步、旧包/重启/重连/超时、连续移动旋转及
+光路、SOURCE 消失、10,000 包最新值、照片/视频/回放和原图片入口；新增单一假串口的
+半行诊断保存与 scene 同时接收检查，以及低速输入保持画面、明确丢失/无效/断线清除、
+低速 Hz 与 STALE 分离。`perf_20261015_230249` 的前 293 条记录约 0.643 Hz，
+间隔中位数 1.50 s、最长 5.313 s；旧 0.25 s 清空规则预计使画面约 82.7% 时间无模型。
+保存记录经同一 C 光路离线回放，22,209 次模型和 18,762 次光线检查均未因接收间隔
+消失，50 次明确 SOURCE 缺失/方向无效仍清除光线。结果保存在该输出目录的
+`flicker_analysis.json`，截图 `flicker_stale_replay.png` 明确标为离线回放；当前运行的
+Python 进程需正常退出后重新启动才加载修复，尚未进行重启后的实时验收。未修复或运行
+旧六类合成已知失败。板端产物与人工 SD 步骤见
+[`vision_ps_baremetal/README.md`](../color_test/software/vision_ps_baremetal/README.md)。
+**本轮未操作板卡；真实摄像头跟随、8～10 Hz 更新、约 200 ms 响应和现场稳定性均待实测验收。**
+
+## 照片虚拟游戏第一版
+
+按本次调整，第一版只使用参考照片，不连接板卡。新增 `--game` 模式调用
+`color_test/software/vision_ps_baremetal/src/vision_ps.c` 和 `ray_game.c`；保持现有
+识别规则、六类映射及物理实现。原有 Python 调试模式继续保留，其下文 SOURCE 等
+输出语义只适用于原模式；游戏方向来自当前 C 识别器。
+
+在仓库根目录运行（Python 3.10+，安装原 requirements，并让 host GCC 位于 PATH）：
+
+```powershell
+python pc_vision/app.py --game --photos sample_photo
+python pc_vision/app.py --game --image sample_photo/075.png --output pc_vision/output/my_game
+python pc_vision/app.py --game --video path/to/1280x720.mp4 --input-hz 8 --scene-timeout 1 --output pc_vision/output/my_video
+python pc_vision/app.py --game --replay pc_vision/output/my_game/scenes.jsonl
+python pc_vision/app.py --game --photos sample_photo --start-photo 001.png --headless --save-frames --output pc_vision/output/my_batch
+python -m unittest pc_vision.test_game -v
+```
+
+`--output` 必须是新目录，不覆盖现有数据。`--cc PATH` 可指定 GCC。
+首次运行以 `-std=c99 -O2 -Wall -Wextra -Werror` 编译 `host_bridge.c` 和原 C 源码；
+按源文件内容哈希缓存到 `pc_vision/output/native/`。使用独立进程管道，因此本机
+32 位 MinGW 和 64 位 Python 可以配合；无需 DLL 位数匹配。无需 ARM 工具链、
+Vivado、ELF、BOOT.bin 或固件加载。照片/文件模式不打开串口；实时 UART 输入见上节。
+尚未建立板卡实时更新率或稳定性的测量结论。
+
+默认目录模式从 `077.png` 开始，可用 `--start-photo 073.png`。静态照片不是连续视频：
+切换时原子替换整张场景、清除稳定历史，并持续显示当前照片；暂停或锁定时仍可
+识别下一张，显示保持固定，解锁/恢复采用最新完整场景。照片无 SOURCE 或 SOURCE
+方向无效时显示其他模型并清除光线；需要恰好一个有效 SOURCE 才能发射或锁定。
+`025.png` 仍因已知 Portal 环歧义被拒绝，未修正旧六类合成识别失败。
+
+鼠标点击游戏上方按钮：
+
+| 按钮 | 作用 | 快捷键 |
+| --- | --- | --- |
+| Start/Pause | 暂停/恢复；初始为跟随模式 | 空格 |
+| Lock | 固定最新有效完整场景和光线；有过期保留物体时拒绝锁定 | L |
+| Unlock | 解锁；若仍暂停，恢复后才替换显示 | U |
+| Reset | 清空锁定、稳定历史和光线；照片模式重新识别当前照片 | R |
+| Calibrate | 打开无缩放原图进行四点标定 | C |
+| Previous / Next | 切换照片 | 左右箭头或 P/N |
+| Snapshot | 保存当前游戏截图，需 `--output` | S |
+
+Q 退出；Esc 在标定中取消，否则退出。窗口显示输入状态、接收/显示帧号、数据年龄、
+跟随/暂停/锁定状态和光线终止原因。识别在后台线程及独立 C 进程进行，刷新和鼠标
+事件在主线程进行；物理使用另一个相同 host 程序进程，避免等待识别进程。
+
+### 坐标、平面标定和固定尺寸
+
+游戏严格区分原图像素、平面坐标和显示像素。输入照片/视频必须是无缩放的
+1280×720 BGR 图像，禁止套用缩小图片的坐标。没有标定时使用图像坐标预览，界面
+明确显示 `UNCALIBRATED PREVIEW`，这些数值没有真实毫米含义。不会根据照片边框
+自动推断实际尺寸或缺失角点；例如 `077.png` 上边部分超出画面，不能可靠点击四角。
+
+已知四角和实际矩形宽高时，保存以下配置（数字必须替换为实际测量；这只是格式）：
+
+```json
+{
+  "schema": "plane-v1",
+  "unit": "mm",
+  "image_size": [1280, 720],
+  "image_points": [[100,100], [1100,120], [1000,650], [200,620]],
+  "plane_size": [600,400]
+}
+```
+
+加载：`python pc_vision/app.py --game --photos sample_photo --calibration path/to/plane.json`。
+手工点击：添加 `--plane-size 实际宽mm 实际高mm --calibration-out 新配置路径`，点击
+Calibrate，再在参考窗口依次点击左上、右上、右下、左下。必须构成凸四边形；配置
+不覆盖旧文件。更换相机位置后需重新标定。原图没有可靠四角时，继续预览或加载
+已知标定坐标，不伪造毫米精度。
+
+中心与方向参考线两端均经过透视映射后重新归一化朝向；SOURCE 使用其发射参考点
+和方向，Portal 保留实心圆到圆环的有向轴；MIRROR/WALL 为无向轴。标准 SOURCE
+三角形以质心为中心，尖端由固定长度和映射方向重新生成，发射点与绘制尖端相同。
+
+`game_config.json` 是默认配置，`--game-config FILE` 可覆盖固定尺寸与稳定参数。
+其中新增 `board_game` 是独立 C 三关控制核心的唯一手工配置；当前 PC 照片浏览器仍采用
+原行为，不会自动启用三关约束或计时。生成配置、C/C++ 接口及最小离线入口见
+[软件 README](../color_test/software/vision_ps_baremetal/README.md#三关游戏控制核心离线)。
+现已有标准 C 检测场景适配及外部时间驱动的文本应用入口，见
+[适配接口和运行命令](../color_test/software/vision_ps_baremetal/README.md#标准-c-场景适配与离线应用入口)。
+它保留原始采集时间/帧序号/派发代次，仅提供未标定恒等映射，不改变本照片浏览器和裸机默认行为。
+同一 C 文本入口现支持菜单鼠标事件、显式 evdev 记录解析和单步事件循环，布局仍由此 JSON 生成，
+见 [输入与调度](../color_test/software/vision_ps_baremetal/README.md#菜单输入与单步离线事件循环)。
+真实 Linux 采集/evdev 设备接入、中文界面、真实标定、显示集成和板端验证仍待完成；
+host 通过不代表 Linux 运行验证或板端验收。
+`model_sizes` 为 `[长轴长度, 横向宽度]`，TARGET 两值必须相同且代表直径。
+未标定时是预览单位，标定后是毫米；默认尺寸是虚拟游戏设计值，不是实物测量，
+标定后应按所需虚拟尺寸调整。各帧绝不使用检测 bbox 大小伸缩模型。
+显示采用同一份模型顶点等比例缩放。MIRROR 的白色中心线是有限反射面；颜色外框
+为装饰。Portal 矩形的长侧面可传送，端面不传送；WALL 为完整 OBB，TARGET 为圆。
+
+物理通过尺度适配复用原 `ray_game.c`，未改其求交代码：默认每平面单位对应 100 个
+C ray 单位，求交 epsilon=0.01 平面单位，SOURCE 出射偏移=0.03 平面单位，Portal
+出口偏移=0.01 平面单位；画面边界精确为平面宽高。`physics_scale` 可配置，必须
+结合最小模型尺寸检查有效精度。固定模型与实物照片的路径可能不同：当前未标定
+预览中 `073/074` 直达目标，`075` 反射命中，`076` Portal 后命中，`077` 经 Portal
+和 Mirror 后到边界；这不表示更改了原识别/物理引擎的回归结果。
+
+### 视频稳定、场景记录与协议预留
+
+视频/动态场景回放在平面坐标稳定位置和方向。默认位置 EMA=0.45、方向 EMA=0.4，
+同类最近邻最大匹配距离=60 平面单位；MIRROR/WALL 消除轴的正负歧义，SOURCE 和
+Portal 保留真实有向转动。非 SOURCE 短漏检最多保留 0.25 s，从物体最后实际看到
+时间计时，以 `held` 暗色显示且不可锁定；SOURCE 漏检立即清除发射光线。持续无更新
+0.25 s 后标为 STALE 并显示上一份完整场景，默认 6 s 后超时清空（可用
+`--scene-timeout` 配置）。等待下一帧不会当成漏检；无效完整帧
+立即清除跟随场景；锁定和暂停只冻结显示，后台最新场景继续更新和过期。解除锁定
+不会恢复超时的旧物体。视频 EOF 继续响应窗口并执行过期处理。
+
+输出 `scenes.jsonl`（完整输入场景和时间、输入名）、`game_results.json`（模型类别和
+C 光线路径）、`metrics.json`、生效配置与最终 `game.png`；`--save-frames` 保存每个
+场景 PNG。回放不重新识别，无需原照片；四点标定仍需单独加载相同配置。
+`--replay-speed` 控制回放速度。图像不进入场景记录；标定用原图窗口。
+
+同一场景编码器/解析器用于离线完整性和 UART 输入；板端发送为可关闭的 opt-in，
+源码默认关闭，独立 live 构建开启。仅构建和核对产物，本轮未加载板卡。
+格式为 ASCII `@SCN1:<十六进制载荷>:END\r\n`，载荷小端：
+
+| 区域 | 字段及单位 |
+| --- | --- |
+| 20 字节头 | u8 版本=1、u8 有效标志、u8 数量(0..16)、u8 保留=0；u32 图像帧号、u32 包序号、u32 帧时间ms；u16 图像宽、高px |
+| 每物体24字节 | u8 类别、u8 标志、u8 可信度0..100、u8 保留；i16 中心x/y×16；i16 轴x/y×10000；u16 参考长/宽×16；i16 SOURCE尖端x/y×16；i16 SOURCE方向x/y×10000 |
+| 类别/标志 | MIRROR=0、PORTAL_A=1、PORTAL_B=2、TARGET=3、SOURCE=4、WALL=5；bit0轴有效、bit1SOURCE方向有效 |
+| 完整性 | 载荷末尾 u32 CRC32/IEEE，覆盖头与全部物体，不覆盖CRC本身；长度必须严格匹配数量；无效帧数量为0 |
+
+像素坐标原点左上，x右y下。参考尺寸仅供映射方向参考线，不控制固定虚拟模型大小。
+解析器限制缓冲、校验版本/长度/范围/CRC，对半包等待、损坏/日志重同步，连续包分别
+提交，断线清除未完成包。未来 UART 必须单独调度包频率和验证启动/重连序号语义。
+按工程默认115200、8N1设计核算：包长 `60+48N` 字节，六物体348字节、16物体828
+字节，若8 Hz分别占24.2%/57.5%线速，未包含普通日志。这里仅是预算，不是板卡实测。
+
+### 本机验证记录
+
+新增16项测试和原 `test_ray_game.c` focused测试通过；77张参考图成功生成场景与
+游戏画面，回放77帧的类别及C光线与照片运行逐项相同。识别平均10.92 ms、最大
+32.79 ms；含读图和保存PNG的离线批处理约25.93场景/s。这些是本机离线测量，
+不代表板端或串口速率。原六类旧合成测试有已知失败，本任务未运行完整测试套件、
+未声称总体通过。实际窗口鼠标体验、实际四点毫米标定、动态视频与板卡实时稳定性
+仍需进一步验收；控制器和调度的测试不能代替现场测量。
+
+本次保留记录在 `pc_vision/output/photo_suite_v1/` 与 `replay_suite_v1/`，游戏例图为
+`game_000073.png`（直接命中）、`game_000075.png`（反射）、`game_000076.png`（Portal）
+和 `game.png`（077完整组合）。`output` 是现有忽略的生成输出位置，不是源代码副本。
+
 ## 安装与运行
 
 在仓库根目录运行，推荐 Python 3.10+：
@@ -29,9 +253,10 @@ python pc_vision/app.py --image pc_vision/output/demo.png
 python pc_vision/app.py --image pc_vision/output/demo.png --headless --output pc_vision/output/run01 --save-frames
 python pc_vision/app.py --video "D:/videos/test.mp4" --headless --max-frames 100 --output pc_vision/output/run02
 python pc_vision/app.py --camera 0 --width 960 --output pc_vision/output/run03
+python pc_vision/app.py --image frame.png --headless --types TARGET --output pc_vision/output/target01
 ```
 
-`--output` 必须为不存在的新目录，避免覆盖原图和旧结果。程序不写入输入文件；处理、绘制使用独立副本。输出 `detections.jsonl`、`effective_config.json`；仅在 `--save-frames` 时保存标注 PNG。每帧也向标准输出写 JSON，点击信息写标准错误。视频读取失败视为结束；损坏视频与正常 EOF 无法仅凭 `read()` 区分。摄像头读取失败会报错并释放资源。
+`--output` 必须为不存在的新目录，避免覆盖原图和旧结果。程序不写入输入文件；处理、绘制使用独立副本。输出 `detections.jsonl`、`effective_config.json`；仅在 `--save-frames` 时保存标注 PNG。每帧也向标准输出写 JSON，点击信息写标准错误。视频读取失败视为结束；损坏视频与正常 EOF 无法仅凭 `read()` 区分。摄像头读取失败会报错并释放资源。`--types TARGET` 只评估 TARGET，但仍使用同一份绿色主体、白环、黑色中心、轮廓层级、几何和拒绝原因判定；它不是第二套简化算法。
 
 ## 模块和流水线
 

@@ -1,0 +1,20 @@
+{
+  "hsv": {
+    "lower": [34, 50, 50],
+    "upper": [70, 255, 255]
+  },
+  "morphology": {
+    "kernel": 3,
+    "open_iterations": 1,
+    "close_iterations": 1
+  },
+  "geometry": {
+    "min_area_pixels": 150.0,
+    "min_area_fraction": 0.0004,
+    "max_area_fraction": 0.08,
+    "max_aspect_ratio": 1.35,
+    "min_circularity": 0.55,
+    "min_enclosing_circle_fill": 0.70
+  }
+}
+

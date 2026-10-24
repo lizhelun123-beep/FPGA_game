@@ -25,6 +25,7 @@ entity axi_dynclk is
         PXL_CLK_O                     : out std_logic;
 		PXL_CLK_5X_O				  : out std_logic;
 		LOCKED_O                      : out std_logic;
+		DISPLAY_READY_O               : out std_logic;
 		-- User ports ends
 		-- Do not modify the ports beyond this line
 
@@ -104,6 +105,7 @@ architecture arch_imp of axi_dynclk is
 		SEN               : in std_logic;
 		SCLK              : in std_logic;
 		RST               : in std_logic;
+		LOCKED_SYNC_I     : in std_logic;
 		S1_CLKOUT0        : in std_logic_vector(35 downto 0);
 		S1_CLKFBOUT       : in std_logic_vector(35 downto 0);
 		S1_DIVCLK         : in std_logic_vector(13 downto 0);
@@ -134,6 +136,9 @@ architecture arch_imp of axi_dynclk is
 	signal pxl_clk                   : std_logic;
 	signal locked                    : std_logic;
 	signal locked_n                  : std_logic;
+    signal display_ready             : std_logic;
+    signal synchronized_locked       : std_logic;
+    signal transaction_done          : std_logic;
 	signal sen_reg                   : std_logic := '0';
  
 	signal mmcm_fbclk_in             : std_logic;
@@ -233,7 +238,8 @@ end generate DontGenerateBUFMR;
 		PXL_CLK => mmcm_clk,
 		CLKFBOUT_O => mmcm_fbclk_out,
 		CLKFBOUT_I => mmcm_fbclk_in,
-		LOCKED_O => locked
+		LOCKED_O => locked,
+		LOCKED_SYNC_I => synchronized_locked
 	);
 	
 	mmcm_fbclk_in <= mmcm_fbclk_out; --Don't bother compensating for any delay, because we don't need a phase relationship between
@@ -254,7 +260,7 @@ end generate DontGenerateBUFMR;
     			when WAIT_LOCKED =>  
 					-- This state ensures that the initial SRDY pulse 
 					-- doesnt interfere with the WAIT_SRDY state
-    				if (locked = '1') then
+                    if (synchronized_locked = '1') then
     					clk_state <= WAIT_EN;
     				end if;
     			when WAIT_EN =>
@@ -276,8 +282,17 @@ end generate DontGenerateBUFMR;
     	end if;
 	end process;
 	
-	STAT_REG(0) <= '1' when clk_state = ENABLED else
+	transaction_done <= '1' when clk_state = ENABLED else
 					'0';
+    STAT_REG(0) <= transaction_done; -- DRP completion, not live lock or stop
+    STAT_REG(1) <= display_ready;
+    STAT_REG(C_S00_AXI_DATA_WIDTH-1 downto 2) <= (others => '0');
+    DISPLAY_READY_O <= display_ready;
+    DisplayGuard: entity work.display_clock_guard
+      port map (clk => s00_axi_aclk, resetn => s00_axi_aresetn,
+        locked => locked, enabled => CTRL_REG(0),
+        transaction_done => transaction_done, ready => display_ready,
+        synchronized_locked => synchronized_locked);
 					
 process (s00_axi_aclk)
 begin

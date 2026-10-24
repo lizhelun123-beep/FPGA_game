@@ -49,7 +49,7 @@ entity mipi_csi2_rx_top is
       kVersionMinor : natural := 0; -- TCL-propagated from VLNV
       kTargetDT : string := "RAW10";
       kGenerateAXIL : boolean := false;
-      kDebug : boolean := true; 
+      kDebug : boolean := false;
       
       --PPI
       kLaneCount : natural range 1 to 4 := 2; --[1,2,4]
@@ -59,7 +59,7 @@ entity mipi_csi2_rx_top is
       C_M_MAX_SAMPLES_PER_CLOCK : natural := 4;
 		-- Parameters of Axi Slave Bus Interface S_AXI_LITE
       C_S_AXI_LITE_DATA_WIDTH   : integer   := 32;
-      C_S_AXI_LITE_ADDR_WIDTH   : integer   := 4
+      C_S_AXI_LITE_ADDR_WIDTH   : integer   := 5
    );
    Port ( 
       --PPI
@@ -139,6 +139,9 @@ architecture Behavioral of mipi_csi2_rx_top is
    
    signal CrcErrorCount :  std_logic_vector(31 downto 0);
    signal FrameCount :  std_logic_vector(31 downto 0);
+   signal xFrameCount, xCrcErrorCount, xStatusSequence : std_logic_vector(31 downto 0);
+   signal xStatusRequest, xStatusBusy : std_logic;
+   signal rbFifoOverflow, xFifoOverflow : std_logic;
    
 begin
     
@@ -209,6 +212,7 @@ MIPI_CSI2_Rx_inst: entity work.MIPI_CSI2_Rx
       
 	  CrcErrorCount => CrcErrorCount,
 	  FrameCount 	=> FrameCount,
+	  FifoOverflow  => rbFifoOverflow,
 	  
       video_aresetn        => vRst_n,
       video_aclk           => video_aclk,
@@ -219,6 +223,23 @@ MIPI_CSI2_Rx_inst: entity work.MIPI_CSI2_Rx
 -- AXI-Lite interface for control and status
 -------------------------------------------------------------------------------
 YesAXILITE: if kGenerateAXIL generate
+   StatusSnapshot: entity work.CSIStatusBridge
+     port map (SourceClk => video_aclk, SourcePackets => FrameCount,
+               SourceCrc => CrcErrorCount, DestClk => s_axi_lite_aclk,
+               DestResetn => s_axi_lite_aresetn, Request => xStatusRequest,
+               Busy => xStatusBusy,
+               Packets => xFrameCount, Crc => xCrcErrorCount, SnapshotSequence => xStatusSequence);
+   SyncOverflowStatus: entity work.CsiSyncAsync
+    generic map (
+       kResetTo => '0',
+       kStages => 2,
+       kResetPolarity => '0')
+    port map (
+       aReset => s_axi_lite_aresetn,
+       aIn => rbFifoOverflow,
+       OutClk => s_axi_lite_aclk,
+       oOut => xFifoOverflow);
+
    AXI_Lite_Control: entity work.MIPI_CSI_2_RX_S_AXI_LITE
     generic map (
        kVersionMajor        => kVersionMajor,
@@ -229,8 +250,12 @@ YesAXILITE: if kGenerateAXIL generate
     port map (
        xEnable => xSoftEnable,
        xRst => xSoftRst,
-	   CrcErrorCount => CrcErrorCount,
-	   FrameCount 	=> FrameCount,
+       CrcErrorCount => xCrcErrorCount,
+       FrameCount => xFrameCount,
+       StatusSequence => xStatusSequence,
+       StatusRequest => xStatusRequest,
+       StatusBusy => xStatusBusy,
+	   FifoOverflow  => xFifoOverflow,
        S_AXI_ACLK   => s_axi_lite_aclk,
        S_AXI_ARESETN   => s_axi_lite_aresetn,
        S_AXI_AWADDR   => s_axi_lite_awaddr,
@@ -253,7 +278,7 @@ YesAXILITE: if kGenerateAXIL generate
        S_AXI_RVALID   => s_axi_lite_rvalid,
        S_AXI_RREADY   => s_axi_lite_rready
     );
-CoreSoftReset: entity work.ResetBridge
+CoreSoftReset: entity work.CsiResetBridge
    generic map (
       kPolarity => '1')
    port map (
@@ -261,7 +286,7 @@ CoreSoftReset: entity work.ResetBridge
       OutClk => video_aclk,
       oRst => vSoftRst);
       
-SyncAsyncClkEnable: entity work.SyncAsync
+SyncAsyncClkEnable: entity work.CsiSyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2) --use double FF synchronizer

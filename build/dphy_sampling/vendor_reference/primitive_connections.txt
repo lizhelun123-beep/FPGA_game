@@ -1,0 +1,180 @@
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/bufio_inst BUFIO
+  DATA_WIDTH=
+  IOBDELAY=
+  PIN O NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_in_int_buf
+  PIN I NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_in_int
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clkout_buf_inst BUFR
+  DATA_WIDTH=
+  IOBDELAY=
+  BUFR_DIVIDE=4
+  PIN O NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/div4_clk_out
+  PIN CE NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const1>
+  PIN CLR NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN I NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_in_int
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/dl0_iserdese2_master ISERDESE2
+  DATA_RATE=DDR
+  DATA_WIDTH=8
+  INTERFACE_TYPE=NETWORKING
+  IOBDELAY=BOTH
+  SERDES_MODE=MASTER
+  NUM_CE=2
+  IS_CLK_INVERTED=1'b0
+  IS_CLKB_INVERTED=1'b1
+  IS_CLKDIV_INVERTED=1'b0
+  PIN O NET 
+  PIN Q1 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[7]
+  PIN Q2 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[6]
+  PIN Q3 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[5]
+  PIN Q4 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[4]
+  PIN Q5 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[3]
+  PIN Q6 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[2]
+  PIN Q7 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[1]
+  PIN Q8 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[0]
+  PIN SHIFTOUT1 NET 
+  PIN SHIFTOUT2 NET 
+  PIN BITSLIP NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN CE1 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const1>
+  PIN CE2 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const1>
+  PIN CLK NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_in_int_buf
+  PIN CLKB NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_in_int_buf
+  PIN CLKDIV NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/div4_clk_out
+  PIN CLKDIVP NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN D NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN DDLY NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_from_pins_delay_0
+  PIN DYNCLKDIVSEL NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN DYNCLKSEL NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN OCLK NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN OCLKB NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN OFB NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN RST NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/io_rst_2clks_r
+  PIN SHIFTIN1 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN SHIFTIN2 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/dl0_with_delay.idelaye2_bus_0 IDELAYE2
+  IDELAY_TYPE=VAR_LOAD
+  IDELAY_VALUE=5
+  DELAY_SRC=IDATAIN
+  HIGH_PERFORMANCE_MODE=FALSE
+  REFCLK_FREQUENCY=200.000
+  SIGNAL_PATTERN=DATA
+  DATA_WIDTH=
+  IOBDELAY=
+  PIN CNTVALUEOUT[4] NET 
+  PIN CNTVALUEOUT[3] NET 
+  PIN CNTVALUEOUT[2] NET 
+  PIN CNTVALUEOUT[1] NET 
+  PIN CNTVALUEOUT[0] NET 
+  PIN DATAOUT NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_from_pins_delay_0
+  PIN C NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/core_clk
+  PIN CE NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN CINVCTRL NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN CNTVALUEIN[4] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[4]
+  PIN CNTVALUEIN[3] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[3]
+  PIN CNTVALUEIN[2] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[2]
+  PIN CNTVALUEIN[1] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[1]
+  PIN CNTVALUEIN[0] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[0]
+  PIN DATAIN NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN IDATAIN NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_from_pins_int_0
+  PIN INC NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN LD NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const1>
+  PIN LDPIPEEN NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN REGRST NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/system_reset
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/dl1_ibufds_inst.dl1_iserdese2_master ISERDESE2
+  DATA_RATE=DDR
+  DATA_WIDTH=8
+  INTERFACE_TYPE=NETWORKING
+  IOBDELAY=BOTH
+  SERDES_MODE=MASTER
+  NUM_CE=2
+  IS_CLK_INVERTED=1'b0
+  IS_CLKB_INVERTED=1'b1
+  IS_CLKDIV_INVERTED=1'b0
+  PIN O NET 
+  PIN Q1 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[15]
+  PIN Q2 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[14]
+  PIN Q3 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[13]
+  PIN Q4 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[12]
+  PIN Q5 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[11]
+  PIN Q6 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[10]
+  PIN Q7 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[9]
+  PIN Q8 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_to_device[8]
+  PIN SHIFTOUT1 NET 
+  PIN SHIFTOUT2 NET 
+  PIN BITSLIP NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN CE1 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const1>
+  PIN CE2 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const1>
+  PIN CLK NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_in_int_buf
+  PIN CLKB NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_in_int_buf
+  PIN CLKDIV NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/div4_clk_out
+  PIN CLKDIVP NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN D NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN DDLY NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_from_pins_delay_1
+  PIN DYNCLKDIVSEL NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN DYNCLKSEL NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN OCLK NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN OCLKB NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN OFB NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN RST NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/io_rst_2clks_r
+  PIN SHIFTIN1 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN SHIFTIN2 NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/dl1_ibufds_inst.ibufds_dl1_inst IBUFDS
+  IOSTANDARD=DEFAULT
+  DIFF_TERM=0
+  IBUF_LOW_PWR=1
+  DATA_WIDTH=
+  IOBDELAY=
+  PIN O NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_from_pins_int_1
+  PIN I NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_hs_rxp[1]
+  PIN IB NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_hs_rxn[1]
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/dl1_ibufds_inst.idelaye2_bus_1 IDELAYE2
+  IDELAY_TYPE=VAR_LOAD
+  IDELAY_VALUE=5
+  DELAY_SRC=IDATAIN
+  HIGH_PERFORMANCE_MODE=FALSE
+  REFCLK_FREQUENCY=200.000
+  SIGNAL_PATTERN=DATA
+  DATA_WIDTH=
+  IOBDELAY=
+  PIN CNTVALUEOUT[4] NET 
+  PIN CNTVALUEOUT[3] NET 
+  PIN CNTVALUEOUT[2] NET 
+  PIN CNTVALUEOUT[1] NET 
+  PIN CNTVALUEOUT[0] NET 
+  PIN DATAOUT NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_from_pins_delay_1
+  PIN C NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/core_clk
+  PIN CE NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN CINVCTRL NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN CNTVALUEIN[4] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[12]
+  PIN CNTVALUEIN[3] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[11]
+  PIN CNTVALUEIN[2] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[10]
+  PIN CNTVALUEIN[1] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[9]
+  PIN CNTVALUEIN[0] NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/tap_ioi_dyn[8]
+  PIN DATAIN NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN IDATAIN NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_from_pins_int_1
+  PIN INC NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN LD NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const1>
+  PIN LDPIPEEN NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/<const0>
+  PIN REGRST NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/system_reset
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/ibufds_clk_inst IBUFDS
+  IOSTANDARD=DEFAULT
+  DIFF_TERM=0
+  IBUF_LOW_PWR=1
+  DATA_WIDTH=
+  IOBDELAY=
+  PIN O NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_in_int
+  PIN I NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_hs_rxp
+  PIN IB NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/clk_hs_rxn
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/ibufds_dl0_inst IBUFDS
+  IOSTANDARD=DEFAULT
+  DIFF_TERM=0
+  IBUF_LOW_PWR=1
+  DATA_WIDTH=
+  IOBDELAY=
+  PIN O NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_in_from_pins_int_0
+  PIN I NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_hs_rxp[0]
+  PIN IB NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/data_hs_rxn[0]
+CELL inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/idly_ctrl.delayctrl IDELAYCTRL
+  DATA_WIDTH=
+  IOBDELAY=
+  PIN RDY NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/dlyctrl_rdy
+  PIN REFCLK NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/core_clk
+  PIN RST NET inst/inst/bd_b733_phy_0_rx_support_i/slave_rx.bd_b733_phy_0_rx_ioi_i/system_reset

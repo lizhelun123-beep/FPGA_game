@@ -5,7 +5,10 @@ import math
 import cv2
 import numpy as np
 
-from body_refinement import source_outline, wall_contrast
+try:
+    from .body_refinement import source_marker_geometry, source_outline, wall_contrast
+except ImportError:  # Keep direct `python pc_vision/app.py` execution working.
+    from body_refinement import source_marker_geometry, source_outline, wall_contrast
 
 
 @dataclass
@@ -38,7 +41,9 @@ class Result:
 
 
 def contours(mask, mode=cv2.RETR_EXTERNAL):
-    return cv2.findContours(mask, mode, cv2.CHAIN_APPROX_SIMPLE)
+    found = cv2.findContours(mask, mode, cv2.CHAIN_APPROX_SIMPLE)
+    # OpenCV 3 returns image, contours, hierarchy; OpenCV 4 returns two values.
+    return found[-2], found[-1]
 
 
 def shape_features(contour):
@@ -59,12 +64,26 @@ def shape_features(contour):
                 fill=float(min(1, area / max(rw * rh, 1))), angle=float(angle))
 
 
+def bbox_iou(first, second):
+    ax, ay, aw, ah = first
+    bx, by, bw, bh = second
+    overlap_w = max(0, min(ax + aw, bx + bw) - max(ax, bx))
+    overlap_h = max(0, min(ay + ah, by + bh) - max(ay, by))
+    intersection = overlap_w * overlap_h
+    return intersection / max(aw * ah + bw * bh - intersection, 1)
+
+
 class Detector:
     TYPES = {"yellow": "MIRROR", "blue": "PORTAL_A", "orange": "PORTAL_B",
              "green": "TARGET", "magenta": "SOURCE", "wall": "WALL"}
 
-    def __init__(self, config):
+    def __init__(self, config, enabled_types=None):
         self.cfg = config
+        known = set(self.TYPES.values())
+        self.enabled_types = known if enabled_types is None else set(enabled_types)
+        unknown = self.enabled_types - known
+        if unknown:
+            raise ValueError("Unknown detection types: " + ", ".join(sorted(unknown)))
 
     def segment(self, hsv):
         masks = {}
@@ -75,12 +94,152 @@ class Detector:
             mask = np.zeros(hsv.shape[:2], np.uint8)
             for lo, hi in ranges:
                 mask |= cv2.inRange(hsv, np.array(lo, np.uint8), np.array(hi, np.uint8))
+            if color == "wall":
+                cfg = self.cfg["wall"]
+                local_mean = cv2.boxFilter(
+                    hsv[:, :, 2], cv2.CV_32F,
+                    (cfg["local_window"], cfg["local_window"]), normalize=True
+                )
+                adaptive = hsv[:, :, 2].astype(np.float32) + cfg["local_delta"] <= local_mean
+                mask &= adaptive.astype(np.uint8) * 255
+            elif color == "black":
+                cfg = self.cfg["black_marker"]
+                local_mean = cv2.boxFilter(
+                    hsv[:, :, 2], cv2.CV_32F,
+                    (cfg["local_window"], cfg["local_window"]), normalize=True
+                )
+                adaptive = hsv[:, :, 2].astype(np.float32) + cfg["local_delta"] <= local_mean
+                mask |= adaptive.astype(np.uint8) * 255
+            raw_marker = mask.copy() if color in ("black", "white") else None
             for name, op in (("open", cv2.MORPH_OPEN), ("close", cv2.MORPH_CLOSE)):
                 if self.cfg["stages"][name]:
                     mask = cv2.morphologyEx(mask, op, kernel,
                                            iterations=self.cfg["morphology"][name + "_iterations"])
+            if raw_marker is not None:
+                mask = raw_marker
             masks[color] = mask
+        marker_cfg = self.cfg["wall_marker"]
+        local_mean = cv2.boxFilter(
+            hsv[:, :, 2], cv2.CV_32F,
+            (marker_cfg["local_window"], marker_cfg["local_window"]), normalize=True
+        )
+        wall_marker = ((hsv[:, :, 1] <= marker_cfg["s_max"]) &
+                       (hsv[:, :, 2] >= marker_cfg["v_min"]) &
+                       (hsv[:, :, 2].astype(np.float32) >=
+                        local_mean + marker_cfg["local_delta"])).astype(np.uint8) * 255
+        if self.cfg["stages"]["open"]:
+            wall_marker = cv2.morphologyEx(wall_marker, cv2.MORPH_OPEN, kernel)
+        if self.cfg["stages"]["close"]:
+            wall_marker = cv2.morphologyEx(wall_marker, cv2.MORPH_CLOSE, kernel)
+        masks["wall_marker"] = wall_marker
         return masks
+
+    def wall_marker_pairs(self, hsv, marker_mask):
+        """Pair transverse white bars and validate the dark corridor between them."""
+        cfg = self.cfg["wall_marker"]
+        count, labels, stats, centers = cv2.connectedComponentsWithStats(
+            (marker_mask != 0).astype(np.uint8), 8
+        )
+        markers = []
+        for index in range(1, count):
+            area = int(stats[index, cv2.CC_STAT_AREA])
+            if not cfg["min_area"] <= area <= cfg["max_area"]:
+                continue
+            yy, xx = np.where(labels == index)
+            centered = np.vstack((xx - xx.mean(), yy - yy.mean()))
+            eigenvalues, eigenvectors = np.linalg.eigh(np.cov(centered, bias=True))
+            if eigenvalues[0] < 0.05:
+                continue
+            major = math.sqrt(12 * eigenvalues[1]) + 1
+            minor = math.sqrt(12 * eigenvalues[0]) + 1
+            aspect = major / minor
+            fill = area / max(major * minor, 1)
+            if not cfg["aspect"][0] <= aspect <= cfg["aspect"][1] or fill < cfg["min_fill"]:
+                continue
+            markers.append(dict(center=np.array(centers[index], dtype=float),
+                                major=major, minor=minor,
+                                axis=eigenvectors[:, 1], area=area, label=index))
+
+        yy, xx = np.indices(marker_mask.shape)
+        proposals = []
+        for first_index, first in enumerate(markers):
+            for second in markers[first_index + 1:]:
+                if (max(first["major"], second["major"]) /
+                        min(first["major"], second["major"]) > cfg["max_major_ratio"] or
+                        max(first["minor"], second["minor"]) /
+                        min(first["minor"], second["minor"]) > cfg["max_minor_ratio"]):
+                    continue
+                delta = second["center"] - first["center"]
+                distance = float(np.linalg.norm(delta))
+                if distance <= 0:
+                    continue
+                axis = delta / distance
+                average_major = (first["major"] + second["major"]) * 0.5
+                average_minor = (first["minor"] + second["minor"]) * 0.5
+                spacing = distance / max(average_major, 1)
+                if not cfg["spacing_ratio"][0] <= spacing <= cfg["spacing_ratio"][1]:
+                    continue
+                if abs(float(first["axis"] @ second["axis"])) < cfg["min_parallel_dot"]:
+                    continue
+                if (abs(float(first["axis"] @ axis)) > cfg["max_perpendicular_dot"] or
+                        abs(float(second["axis"] @ axis)) > cfg["max_perpendicular_dot"]):
+                    continue
+                center = (first["center"] + second["center"]) * 0.5
+                longitudinal = (xx - center[0]) * axis[0] + (yy - center[1]) * axis[1]
+                transverse = abs(-(xx - center[0]) * axis[1] +
+                                 (yy - center[1]) * axis[0])
+                corridor = ((abs(longitudinal) <= distance * cfg["longitudinal_fraction"]) &
+                            (transverse <= average_major * cfg["transverse_fraction"]))
+                corridor_values = hsv[:, :, 2][corridor]
+                if corridor_values.size < cfg["min_area"]:
+                    continue
+                dark_fraction = float(np.mean(corridor_values <= cfg["dark_v_max"]))
+                if dark_fraction < cfg["min_dark_fraction"]:
+                    continue
+                normal = np.array([-axis[1], axis[0]])
+                half_long = distance * 0.5 + average_minor * 0.75
+                half_short = average_major * 0.5 + average_minor * 0.5
+                corners = np.array([
+                    center + sx * axis * half_long + sy * normal * half_short
+                    for sx in (-1, 1) for sy in (-1, 1)
+                ])
+                x0 = max(0, int(math.floor(corners[:, 0].min())))
+                y0 = max(0, int(math.floor(corners[:, 1].min())))
+                x1 = min(marker_mask.shape[1], int(math.ceil(corners[:, 0].max())) + 1)
+                y1 = min(marker_mask.shape[0], int(math.ceil(corners[:, 1].max())) + 1)
+                width, height = x1 - x0, y1 - y0
+                area = 4 * half_long * half_short
+                wall_geometry = self.cfg["geometry"]["WALL"]
+                if (area < wall_geometry["min_area"] or
+                        area > marker_mask.size * wall_geometry["max_frame_fraction"]):
+                    continue
+                angle = math.degrees(math.atan2(axis[1], axis[0]))
+                if angle >= 90:
+                    angle -= 180
+                if angle < -90:
+                    angle += 180
+                proposals.append(dict(
+                    type="WALL", center=center, bbox=[x0, y0, width, height],
+                    area=area, width=width, height=height,
+                    rotated_width=2 * half_long, rotated_height=2 * half_short,
+                    aspect_ratio=half_long / max(half_short, 1), circularity=0.0,
+                    fill=dark_fraction, angle=angle, color_fill=dark_fraction,
+                    body_bbox=[x0, y0, width, height], outline_used=False,
+                    surround_contrast=None, colored_overlap=0.0,
+                    rejection_reasons=[], marker_ok=True,
+                    marker_result="two_white_transverse_bars+dark_center",
+                    geometry_ok=True, accepted=True, markers=(first, second),
+                ))
+        proposals.sort(key=lambda item: item["area"], reverse=True)
+        kept = []
+        for proposal in proposals:
+            x, y, w, h = proposal["bbox"]
+            if any((max(0, min(x+w, k["bbox"][0]+k["bbox"][2]) - max(x, k["bbox"][0])) *
+                    max(0, min(y+h, k["bbox"][1]+k["bbox"][3]) - max(y, k["bbox"][1]))) /
+                   max(w*h + k["bbox"][2]*k["bbox"][3], 1) > 0.35 for k in kept):
+                continue
+            kept.append(proposal)
+        return kept
 
     def marker_regions(self, mask, object_area):
         """RETR_CCOMP preserves ring holes; evaluate all enclosed components."""
@@ -123,6 +282,62 @@ class Detector:
             if kind != "unknown":
                 markers.append(dict(kind=kind, features=f, contour=contour, hole=hole_mask))
         return markers
+
+    def sampled_portal_markers(self, type_name, features, masks):
+        """Fallback for thin/incomplete rings using the same endpoint ratios as PS."""
+        cfg = self.cfg["marker"]
+        angle = math.radians(features["angle"])
+        axis = np.array([math.cos(angle), math.sin(angle)])
+        center = np.array(features["center"], dtype=float)
+        radius = max(2.0, features["rotated_height"] * cfg["endpoint_radius"])
+        body_color = "blue" if type_name == "PORTAL_A" else "orange"
+        yy, xx = np.ogrid[:masks["white"].shape[0], :masks["white"].shape[1]]
+
+        def marker(kind, point):
+            contour = cv2.ellipse2Poly(
+                tuple(np.rint(point).astype(int)),
+                (max(2, round(radius)), max(2, round(radius))), 0, 0, 360, 30
+            ).reshape(-1, 1, 2)
+            marker_features = shape_features(contour)
+            marker_features["center"] = point.tolist()
+            return dict(kind=kind, features=marker_features, contour=contour,
+                        hole=np.zeros_like(masks["white"]))
+
+        pairings = []
+        offsets = [cfg["endpoint_offset"], *cfg["endpoint_offset_fallbacks"]]
+        for offset_fraction in offsets:
+            offset = features["rotated_width"] * offset_fraction
+            samples = []
+            for sign in (-1, 1):
+                point = center + sign * axis * offset
+                distance_sq = (xx - point[0]) ** 2 + (yy - point[1]) ** 2
+                inner = distance_sq <= radius * radius * 0.16
+                annulus = ((distance_sq >= radius * radius * 0.36) &
+                           (distance_sq <= radius * radius))
+                inner_total = max(int(np.count_nonzero(inner)), 1)
+                annulus_total = max(int(np.count_nonzero(annulus)), 1)
+                white_inner = np.count_nonzero((masks["white"] != 0) & inner) / inner_total
+                white_annulus = np.count_nonzero((masks["white"] != 0) & annulus) / annulus_total
+                body_inner = np.count_nonzero((masks[body_color] != 0) & inner) / inner_total
+                samples.append(dict(point=point, solid=white_inner,
+                                    ring_white=white_annulus, ring_body=body_inner))
+            for solid_index, ring_index in ((0, 1), (1, 0)):
+                solid = samples[solid_index]
+                ring = samples[ring_index]
+                if (solid["solid"] >= cfg["solid_sample_min"] and
+                        ring["ring_white"] >= cfg["ring_sample_min"] and
+                        ring["ring_white"] >= (ring["solid"] +
+                                               cfg["ring_sample_annulus_margin"]) and
+                        ring["ring_body"] >= cfg["ring_sample_body_min"]):
+                    score = (2 * solid["solid"] + ring["ring_white"] +
+                             ring["ring_body"] - solid["ring_body"] - ring["solid"])
+                    pairings.append((score, solid_index, ring_index, samples))
+        if not pairings:
+            return False, [], "sampled_endpoint_pair_failed"
+        _, solid_index, ring_index, samples = max(pairings, key=lambda item: item[0])
+        return True, [marker("solid", samples[solid_index]["point"]),
+                      marker("ring", samples[ring_index]["point"])], \
+            "sampled_white_disk+body_color_ring"
 
     def verify_markers(self, type_name, features, interior, masks):
         if type_name in ("SOURCE", "WALL"):
@@ -169,6 +384,12 @@ class Detector:
                     if ratio >= cfg["ring_center_color_fraction"]:
                         return True, [left, right], "white_disk+body_color_ring"
                     ring_color_failed = True
+        if type_name.startswith("PORTAL"):
+            sampled_ok, sampled_markers, sampled_note = self.sampled_portal_markers(
+                type_name, features, masks
+            )
+            if sampled_ok:
+                return True, sampled_markers, sampled_note
         if ring_color_failed:
             return False, regions, "ring_inner_color_failed"
         if not regions:
@@ -203,7 +424,15 @@ class Detector:
         # Confirmed colored objects suppress duplicate WALL classifications.
         # Rejected color candidates must never punch holes into a wall mask.
         occupied = np.zeros(bgr.shape[:2], np.uint8)
+        marker_walls = []
+        if ("WALL" in self.enabled_types and stages["markers"] and
+                stages["geometry"]):
+            marker_walls = self.wall_marker_pairs(
+                result.hsv, result.masks["wall_marker"]
+            )
         for color, type_name in self.TYPES.items():
+            if type_name not in self.enabled_types:
+                continue
             source_mask = result.masks[color].copy()
             found, _ = contours(source_mask)
             stats = result.segmentation_stats[color]
@@ -215,6 +444,12 @@ class Detector:
                     continue
                 body_bbox = f["bbox"]
                 outline_used = False
+                marker_geometry = None
+                if type_name == "SOURCE":
+                    marker_geometry = source_marker_geometry(
+                        contour, result.masks["white"], result.masks["black"],
+                        self.cfg["source_outline"]
+                    )
                 if type_name == "SOURCE" and stages["source_outline"] and f["area"] >= self.cfg["candidate"]["min_area"]:
                     contour, outline_used = source_outline(contour, result.masks["wall"], self.cfg["source_outline"])
                     if outline_used:
@@ -251,6 +486,11 @@ class Detector:
                 geometry_failures = []
                 if not g["aspect"][0] <= f["aspect_ratio"] <= g["aspect"][1]:
                     geometry_failures.append("aspect_ratio")
+                if f["area"] < g.get("min_area", 0):
+                    geometry_failures.append("class_min_area")
+                if f["area"] > bgr.shape[0] * bgr.shape[1] * g.get(
+                        "max_frame_fraction", 1):
+                    geometry_failures.append("class_max_area")
                 for name, value, minimum in (("fill", f["fill"], g.get("min_fill", 0)),
                                              ("circularity", f["circularity"], g.get("min_circularity", 0)),
                                              ("color_fill", color_fill, g.get("min_color_fill", 0))):
@@ -266,6 +506,9 @@ class Detector:
                 reasons = []
                 if colored_overlap > g.get("max_colored_overlap", 1):
                     reasons.append("colored_overlap")
+                if any(bbox_iou(f["bbox"], wall["bbox"]) >= 0.50
+                       for wall in marker_walls):
+                    reasons.append("suppressed_by_wall_marker")
                 if not marker_ok:
                     reasons.append(note)
                 if stages["geometry"]:
@@ -275,6 +518,7 @@ class Detector:
                     occupied[y:y+h, x:x+w] |= interior
                 candidate = dict(type=type_name, **f, color_fill=color_fill,
                                  body_bbox=body_bbox, outline_used=outline_used,
+                                 marker_geometry=marker_geometry,
                                  surround_contrast=surround_contrast,
                                  colored_overlap=colored_overlap, rejection_reasons=reasons,
                                  markers=[dict(kind=m["kind"],
@@ -310,7 +554,12 @@ class Detector:
                     score += weights["source_triangle_bonus"] * min(1, f["area"] / max(triangle_area, 1))
                 if not stages["markers"] or not stages["geometry"]:
                     score = min(score, weights["unverified_cap"])
-                cx, cy = f["center"]
+                if marker_geometry is not None:
+                    cx, cy = marker_geometry["center"]
+                    detection_bbox = marker_geometry["bbox"]
+                else:
+                    cx, cy = f["center"]
+                    detection_bbox = (x, y, w, h)
                 angle = f["angle"]
                 if type_name.startswith("PORTAL") and len(markers) == 2:
                     disk = next(m for m in markers if m["kind"] == "solid")
@@ -319,9 +568,36 @@ class Detector:
                     angle = math.degrees(math.atan2(dy, dx))
                 elif type_name == "TARGET":
                     angle = 0.0
-                detection = Detection(type_name, cx, cy, x, y, w, h, angle, round(min(score, 1), 3))
+                detection = Detection(type_name, cx, cy, *detection_bbox,
+                                      angle, round(min(score, 1), 3))
                 result.detections.append(detection)
                 if stages["draw"]:
                     cv2.circle(result.final, (round(cx), round(cy)), 3, (0, 0, 255), -1)
                     cv2.putText(result.final, f"{type_name} {detection.confidence:.2f}", (x, max(14, y-5)), cv2.FONT_HERSHEY_SIMPLEX, .45, (0, 255, 0), 1)
+        for wall in marker_walls:
+            x, y, w, h = wall["bbox"]
+            first, second = wall.pop("markers")
+            for marker in (first, second):
+                center = marker["center"]
+                extent = marker["axis"] * marker["major"] * 0.5
+                cv2.line(result.marker_mask,
+                         tuple(np.rint(center - extent).astype(int)),
+                         tuple(np.rint(center + extent).astype(int)), 255,
+                         max(1, round(marker["minor"])))
+            result.candidate_mask[y:y+h, x:x+w] = 255
+            wall["center"] = wall["center"].tolist()
+            result.candidates.append(wall)
+            cx, cy = wall["center"]
+            detection = Detection(
+                "WALL", float(cx), float(cy), x, y, w, h,
+                float(wall["angle"]), 1.0,
+            )
+            result.detections.append(detection)
+            if stages["draw"]:
+                cv2.rectangle(result.final, (x, y), (x+w-1, y+h-1),
+                              (0, 200, 0), 1)
+                cv2.circle(result.final, (round(cx), round(cy)), 3,
+                           (0, 0, 255), -1)
+                cv2.putText(result.final, "WALL 1.00", (x, max(14, y-5)),
+                            cv2.FONT_HERSHEY_SIMPLEX, .45, (0, 255, 0), 1)
         return result

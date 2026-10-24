@@ -347,10 +347,9 @@ sCrntPositionIndicator <= sCntLines(0) & sCntColumns(0);
 
 -- Based on current position in the Bayer matrix, we decide from which position we take
 -- the blue, the green and the red pixels which we will then use to form a complete
--- pixel (RGB).  Although OV5640 register 0x4300 selects the RAW BGBG/GRGR format,
--- the active vertical-flip/binning settings and CSI frame origin make the effective
--- phase observed by the PL RGGB.  This mapping is verified on the AX7Z020B board;
--- treating the stream as nominal BGGR swaps real-world red and blue.
+-- pixel (RGB).  The OV5640 RAW10 reference configuration reaches this block as
+-- BGGR (the same contract as Xilinx v_demosaic Bayer phase 3).  Select red and
+-- blue from that phase here; downstream channel order remains RGB.
 AssignOutputs: process(StreamClk)
 begin
   if rising_edge(StreamClk) then
@@ -367,21 +366,21 @@ begin
       else
         case sCrntPositionIndicatorDly3 is
           when "10" =>
-            sAXIMasterBlue  <= sPixel(1)(kBayerWidth-1 downto 0);
-            sAXIMasterGreen <= sPixel(0) + sPixel(3);
-            sAXIMasterRed  <= sPixel(2)(kBayerWidth-1 downto 0);
-          when "11" =>
-            sAXIMasterBlue  <= sPixel(0)(kBayerWidth-1 downto 0);
-            sAXIMasterGreen <= sPixel(1) + sPixel(2);
-            sAXIMasterRed  <= sPixel(3)(kBayerWidth-1 downto 0);
-          when "00" =>
-            sAXIMasterBlue  <= sPixel(3)(kBayerWidth-1 downto 0);
-            sAXIMasterGreen <= sPixel(1) + sPixel(2);
-            sAXIMasterRed  <= sPixel(0)(kBayerWidth-1 downto 0);
-          when "01" =>
             sAXIMasterBlue  <= sPixel(2)(kBayerWidth-1 downto 0);
             sAXIMasterGreen <= sPixel(0) + sPixel(3);
             sAXIMasterRed  <= sPixel(1)(kBayerWidth-1 downto 0);
+          when "11" =>
+            sAXIMasterBlue  <= sPixel(3)(kBayerWidth-1 downto 0);
+            sAXIMasterGreen <= sPixel(1) + sPixel(2);
+            sAXIMasterRed  <= sPixel(0)(kBayerWidth-1 downto 0);
+          when "00" =>
+            sAXIMasterBlue  <= sPixel(0)(kBayerWidth-1 downto 0);
+            sAXIMasterGreen <= sPixel(1) + sPixel(2);
+            sAXIMasterRed  <= sPixel(3)(kBayerWidth-1 downto 0);
+          when "01" =>
+            sAXIMasterBlue  <= sPixel(1)(kBayerWidth-1 downto 0);
+            sAXIMasterGreen <= sPixel(0) + sPixel(3);
+            sAXIMasterRed  <= sPixel(2)(kBayerWidth-1 downto 0);
             
 
           when others => null;

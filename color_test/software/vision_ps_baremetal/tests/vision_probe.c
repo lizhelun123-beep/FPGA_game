@@ -48,10 +48,12 @@ int main(int argc, char **argv)
         printf("%d\n", count);
         for (i = 0; i < count; ++i) {
             const VisionDetection *d = &detections[i];
-            printf("%s %d %d %d %d %d %d %d %u\n",
+            printf("%s %d %d %d %d %d %d %d %u %d %.6f %.6f %d %d\n",
                    vision_type_name(d->type), d->center_x, d->center_y,
                    d->bbox_x, d->bbox_y, d->bbox_w, d->bbox_h,
-                   d->angle_deg, d->sampled_area);
+                   d->angle_deg, d->sampled_area, d->direction_valid,
+                   d->source_direction_x, d->source_direction_y,
+                   d->source_tip_x, d->source_tip_y);
         }
         return count < 0 ? 3 : 0;
     }

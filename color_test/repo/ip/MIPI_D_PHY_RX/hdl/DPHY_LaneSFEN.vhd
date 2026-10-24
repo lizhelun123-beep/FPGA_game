@@ -47,7 +47,7 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use ieee.math_real.all;
 
-use work.DebugLib.all;
+use work.DphyDebugLib.all;
 
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
@@ -60,6 +60,7 @@ use IEEE.NUMERIC_STD.ALL;
 
 entity DPHY_LaneSFEN is
    Generic (
+      kBUFH_DDIRECT_M3 : boolean := false;
       kRefClkFreqHz : natural := 200_000_000;
       kAddDelay_ps : integer := 0;
       kNoLP : boolean := false
@@ -78,7 +79,7 @@ entity DPHY_LaneSFEN is
       
       SerClkHS : in STD_LOGIC;
       DivClk : in STD_LOGIC;
-      aRxClkActiveHS : in STD_LOGIC;
+      cRxClkActiveHS : in STD_LOGIC; -- shared RefClk bridge; async loss retained
 
       --PPI
       RxByteClkHS : out std_logic;      
@@ -134,11 +135,12 @@ constant kOffset     : natural := 3 + 1 ; -- adjust timeout values above to acco
 signal cDelayCnt : natural range 0 to MAX(kTInit,kTHSSettle) := 0;
 signal cHS_Trail, cHSReset, dDelayCntEn, cDelayCntEn : std_logic;
 signal dSyncHard, dSyncSoft, dSyncErr, dIntRst, dHSReset, dStopstate, dValid : std_logic;
+signal dDrainBusy : std_logic;
 signal cEnable, cIntRst, cHSClkRst, cForceRxmode, cInitDone, cHSSettled, cValid : std_logic;
 signal cInitTout, cHSSettleTout: std_logic; --CtlClk timeout flags
 signal dSyncHard_reg, dSyncSoft_reg, dSyncErr_reg, dInitDone : std_logic; -- for pulse generation 
 signal dDataOut : std_logic_vector(7 downto 0);
-signal aNotEnable, aNotRxClkActiveHS : std_logic;
+signal aNotEnable : std_logic;
 begin
 
 debug.cIntRst <= cIntRst;
@@ -154,7 +156,7 @@ debug.dSyncHard <= dSyncHard;
 debug.dSyncSoft <= dSyncSoft;
 debug.dSyncErr <= dSyncErr;
 
-SyncAsyncEnable: entity work.SyncAsync
+SyncAsyncEnable: entity work.DphySyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2) --use double FF synchronizer
@@ -165,17 +167,12 @@ SyncAsyncEnable: entity work.SyncAsync
       oOut => cEnable);
 cIntRst <= not cEnable;
 
-aNotRxClkActiveHS <= not aRxClkActiveHS;
-RxClkActiveHSResetBridge: entity work.ResetBridge
-   generic map (
-      kPolarity => '1')
-   port map (
-      aRst => aNotRxClkActiveHS,
-      OutClk => CtlClk,
-      oRst => cHSClkRst);
+-- Already bridged once for every lane on this same RefClk. Only the common
+-- clock-activity reset is shared; lane enable/FSM/settled resets remain local.
+cHSClkRst <= not cRxClkActiveHS;
  
                
-SyncAsyncForceRxMode: entity work.SyncAsync
+SyncAsyncForceRxMode: entity work.DphySyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2) --use double FF synchronizer
@@ -194,7 +191,7 @@ UseOwnLP: if not kNoLP generate
 -- At the end of HS, LP-00 goes to LP-11, but this is the only valid transition. So
 -- spurious LP-01 or LP-10 between them can be ignored, until it stabilizes in LP-11.
 GenSyncLP: for i in 0 to 1 generate
-   SyncAsyncx: entity work.SyncAsync
+   SyncAsyncx: entity work.DphySyncAsync
       generic map (
          kResetTo => '0',
          kStages => 2) --use double FF synchronizer
@@ -244,6 +241,10 @@ begin
    if Rising_Edge(CtlClk) then
       if (cIntRst = '1') then
          state <= stInitCountDown;
+      elsif cHSClkRst = '1' and state /= stInitCountDown then
+         -- A new ready epoch must observe a complete LP-11/01/00 entry.
+         -- Do not resume a burst whose SoT passed while clocks were unready.
+         state <= stWaitForStop;
       else
          state <= nstate;
       end if;        
@@ -270,7 +271,11 @@ begin
    elsif Rising_Edge(CtlClk) then
       if state = stHS_Settle and cHSSettleTout = '1' then
          cHSSettled <= '1';
-      elsif state = stStop and cValid = '0' then
+      -- Every burst must settle again. The drain acknowledgement can arrive
+      -- after a short LP-11 has already left stStop; it must not keep the old
+      -- settled epoch alive. Byte logic waits for the full tail to drain
+      -- before clearing its SoT/alignment. Keep cHSReset separately gated.
+      elsif state = stStop then
          cHSSettled <= '0';
       end if;
    end if;
@@ -324,9 +329,11 @@ RxByteClkHS <= DivClk;
 MakeLSF: for i in rbRxDataHS'range generate  
    rbRxDataHS(i) <= dDataOut(rbRxDataHS'length-1-i);
 end generate MakeLSF;
-rbRxValidHS <= dValid;
-rbRxActiveHS <= dSyncHard or dSyncSoft;
-rbRxSyncHS <= (dSyncHard and not dSyncHard_reg) or (dSyncSoft and not dSyncSoft_reg);
+rbRxValidHS <= dValid and cRxClkActiveHS when kBUFH_DDIRECT_M3 else dValid;
+rbRxActiveHS <= (dSyncHard or dSyncSoft) and cRxClkActiveHS when kBUFH_DDIRECT_M3 else dSyncHard or dSyncSoft;
+rbRxSyncHS <= ((dSyncHard and not dSyncHard_reg) or (dSyncSoft and not dSyncSoft_reg))
+   and cRxClkActiveHS when kBUFH_DDIRECT_M3 else
+   (dSyncHard and not dSyncHard_reg) or (dSyncSoft and not dSyncSoft_reg);
 rbErrSotSyncHS <= (dSyncSoft and not dSyncSoft_reg);
 rbErrSotHS <= dSyncErr and not dSyncErr_reg;
 GenSyncPulse: process(DivClk)
@@ -341,6 +348,7 @@ end process;
 HSDeserializerX: entity work.HS_Deserializer
    Generic map (
       kIs8b9b => false,
+      kBUFH_DDIRECT_M3 => kBUFH_DDIRECT_M3,
       kAddDelay_ps => kAddDelay_ps,
       kNoLP => kNoLP
    )
@@ -359,6 +367,7 @@ HSDeserializerX: entity work.HS_Deserializer
       aLPOut => aLP_int,
       dDataOut8 => dDataOut,
       dValid => dValid,
+      dDrainBusy => dDrainBusy,
       
       dSyncHard => dSyncHard,
       dSyncSoft => dSyncSoft,
@@ -373,13 +382,13 @@ HSDeserializerX: entity work.HS_Deserializer
       aSettled => cHSSettled
    );     
 
-SyncAsyncValid: entity work.SyncAsync
+SyncAsyncValid: entity work.DphySyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2) --use double FF synchronizer
    port map (
       aReset => cHSClkRst,
-      aIn => dValid,
+      aIn => dDrainBusy,
       OutClk => CtlClk,
       oOut => cValid);
            

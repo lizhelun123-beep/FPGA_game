@@ -30,12 +30,14 @@
 ##
 ###############################################################################
 
-# setup, hold = 0.15*UI = 0.75ns
-set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -clock_fall -min -add_delay 0.750 [get_ports {dphy_data_hs_n[*]}]
-set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -clock_fall -max -add_delay 4.250 [get_ports {dphy_data_hs_n[*]}]
-set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -min -add_delay 0.750 [get_ports {dphy_data_hs_n[*]}]
-set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -max -add_delay 4.250 [get_ports {dphy_data_hs_n[*]}]
-set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -clock_fall -min -add_delay 0.750 [get_ports {dphy_data_hs_p[*]}]
-set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -clock_fall -max -add_delay 4.250 [get_ports {dphy_data_hs_p[*]}]
-set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -min -add_delay 0.750 [get_ports {dphy_data_hs_p[*]}]
-set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -max -add_delay 4.250 [get_ports {dphy_data_hs_p[*]}]
+# The 280.034 MHz source clock transfers data on both edges, so the DDR UI is
+# 1.7855 ns.  Preserve the vendor 15% UI setup/hold margin with literal values;
+# Vivado 2023.1 does not accept Tcl list/control-flow commands in this IP XDC.
+set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -clock_fall -min -add_delay 0.268 [get_ports {dphy_data_hs_n[*]}]
+set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -clock_fall -max -add_delay 1.518 [get_ports {dphy_data_hs_n[*]}]
+set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -min -add_delay 0.268 [get_ports {dphy_data_hs_n[*]}]
+set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -max -add_delay 1.518 [get_ports {dphy_data_hs_n[*]}]
+set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -clock_fall -min -add_delay 0.268 [get_ports {dphy_data_hs_p[*]}]
+set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -clock_fall -max -add_delay 1.518 [get_ports {dphy_data_hs_p[*]}]
+set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -min -add_delay 0.268 [get_ports {dphy_data_hs_p[*]}]
+set_input_delay -clock [get_clocks -of_objects [get_ports dphy_clk_hs_p]] -max -add_delay 1.518 [get_ports {dphy_data_hs_p[*]}]

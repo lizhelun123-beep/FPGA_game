@@ -15,18 +15,24 @@ from detector import Detector
 BG = (156, 151, 146)
 COLORS = {"MIRROR": (0, 230, 240), "PORTAL_A": (230, 90, 20),
           "PORTAL_B": (0, 135, 255), "TARGET": (45, 190, 40),
-          "SOURCE": (180, 30, 225), "WALL": (35, 35, 35)}
+          "SOURCE": (40, 74, 118), "WALL": (35, 35, 35)}
 
 
 def fixture(kind, bad=None):
     image = np.full((220, 320, 3), BG, np.uint8)
     color = COLORS[kind]
-    if kind in ("MIRROR", "WALL"):
-        cv2.rectangle(image, (35, 78), (285, 142), (15, 15, 15) if kind == "MIRROR" else (220, 220, 220), -1)
+    if kind == "MIRROR":
+        cv2.rectangle(image, (35, 78), (285, 142), (15, 15, 15), -1)
         cv2.rectangle(image, (40, 83), (280, 137), color, -1)
-        if kind == "MIRROR" and bad != "missing":
+        if bad != "missing":
             for center in ((75, 110), (245, 110)):
                 cv2.circle(image, center, 10, (15, 15, 15), -1)
+    elif kind == "WALL":
+        # Match the supplied 50 cm captures: the wall occupies about 2-5% of
+        # the frame, not the former oversized 18.4% synthetic rectangle.
+        cv2.rectangle(image, (110, 94), (210, 126), color, -1)
+        cv2.rectangle(image, (120, 98), (128, 122), (245, 245, 245), -1)
+        cv2.rectangle(image, (190, 98), (198, 122), (245, 245, 245), -1)
     elif kind.startswith("PORTAL"):
         cv2.rectangle(image, (90, 80), (230, 140), color, -1)
         for center in ((90, 110), (230, 110)):
@@ -44,9 +50,15 @@ def fixture(kind, bad=None):
             if bad != "no_black":
                 cv2.circle(image, (160, 110), 10, (15, 15, 15), -1)
     else:
-        points = np.array([[160, 52], [102, 158], [218, 158]], np.int32)
+        outer = np.array([[160, 23], [88, 187], [232, 187]], np.int32)
+        points = np.array([[160, 35], [100, 175], [220, 175]], np.int32)
+        cv2.fillPoly(image, [outer], (15, 15, 15))
         cv2.fillPoly(image, [points], color)
-        cv2.polylines(image, [points], True, (15, 15, 15), 5)
+        # SOURCE is valid only as the two-part physical marker: the white band
+        # covers the non-emitting base and the remaining coloured tip emits.
+        band = np.array([[100, 175], [220, 175], [202, 133], [118, 133]],
+                        np.int32)
+        cv2.fillPoly(image, [band], (245, 245, 245))
     return image
 
 
@@ -73,6 +85,17 @@ class VisionTests(unittest.TestCase):
                 result = self.detector.process(fixture(kind, bad))
                 self.assertEqual(result.detections, [])
 
+    def test_portal_minimum_area_rejects_small_marker_complete_pattern(self):
+        image = cv2.resize(fixture("PORTAL_B"), None, fx=.40, fy=.40,
+                           interpolation=cv2.INTER_NEAREST)
+        result = self.detector.process(image)
+        candidates = [item for item in result.candidates
+                      if item["type"] == "PORTAL_B"]
+        self.assertEqual(result.detections, [])
+        self.assertEqual(len(candidates), 1)
+        self.assertTrue(candidates[0]["marker_ok"])
+        self.assertEqual(candidates[0]["rejection_reasons"], ["class_min_area"])
+
     def test_background_noise_and_no_mutation(self):
         image = np.full((300, 400, 3), BG, np.uint8)
         rng = np.random.default_rng(123)
@@ -92,6 +115,20 @@ class VisionTests(unittest.TestCase):
                 self.assertEqual(result.detections, [])
             if stage == "draw":
                 np.testing.assert_array_equal(result.final, fixture("PORTAL_A"))
+
+    def test_target_only_keeps_marker_semantics(self):
+        detector = Detector(load_config(), enabled_types=("TARGET",))
+        self.assertEqual([d.type for d in detector.process(fixture("TARGET")).detections],
+                         ["TARGET"])
+        self.assertEqual(detector.process(fixture("MIRROR")).detections, [])
+        rejected = detector.process(fixture("TARGET", "no_black"))
+        self.assertEqual(rejected.detections, [])
+        self.assertIn("ring_center_or_black_failed",
+                      rejected.candidates[0]["rejection_reasons"])
+
+    def test_unknown_enabled_type_is_rejected(self):
+        with self.assertRaises(ValueError):
+            Detector(load_config(), enabled_types=("NOT_A_CLASS",))
 
     def test_calibration_hue_wrap_and_unicode_io(self):
         with tempfile.TemporaryDirectory() as directory:

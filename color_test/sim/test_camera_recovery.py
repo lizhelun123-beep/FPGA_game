@@ -13,13 +13,18 @@ sensor_source = (root / "software/mipi_hdmi/mipi_hdmi/src/ov5640.c").read_text()
 bayer_source = (root / "repo/ip/AXI_BayerToRGB/hdl/AXI_BayerToRGB.vhd").read_text()
 
 # RAW must stay RAW(DPC) until the matching PL demosaic.  The active sensor
-# flip/binning configuration makes the phase observed at the PL input RGGB.
+# flip/binning configuration makes the phase observed at the PL input BGGR.
 # Enabling the sensor CIP/AWB path here produces a double/intermixed pipeline.
 assert "{0x4300, 0x00}" in sensor_source
 assert "{0x501f, 0x03}" in sensor_source
 assert "{0x5000, 0x06}" in sensor_source
 assert "sensor_write_array(IicInstance,cfg_advanced_awb)" not in sensor_source
-assert "phase observed by the PL RGGB" in bayer_source
+assert "BGGR (the same contract as Xilinx v_demosaic Bayer phase 3)" in bayer_source
+for reg in ("0x300e", "0x3018", "0x3034", "0x3035", "0x3036", "0x3037",
+            "0x3108", "0x3808", "0x3809", "0x380a", "0x380b", "0x4300",
+            "0x4800", "0x4837", "0x5000", "0x5001", "0x501f"):
+    assert reg in sensor_source
+assert "OV5640 REG %04x = %02x" in sensor_source
 # AXI_GammaCorrection accepts the selector through writes, but its AXI-Lite
 # read data is permanently zero; a readback comparison must not block startup.
 assert "Xil_Out32(XPAR_AXI_GAMMACORRECTION_0_BASEADDR, CAMERA_GAMMA_FACTOR_1_8);" in source
@@ -30,12 +35,16 @@ prefix = r'''
 #include <stdint.h>
 #include <stdio.h>
 typedef uint32_t u32;
+typedef uintptr_t UINTPTR;
 #define XST_SUCCESS 0
 #define XST_FAILURE 1
 #define XPAR_AXIVDMA_1_BASEADDR 0x1000
+#define XPAR_AXIVDMA_0_BASEADDR 0x4000
 #define XPAR_AXIVDMA_1_DEVICE_ID 1
 #define XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR 0x2000
+#define XPAR_MIPI_D_PHY_RX_0_S_AXI_LITE_BASEADDR 0x3000
 #define XPAR_XIICPS_0_DEVICE_ID 0
+#define XAXIVDMA_TX_OFFSET 0
 #define XAXIVDMA_RX_OFFSET 0x30
 #define XAXIVDMA_SR_OFFSET 4
 #define XAXIVDMA_IXR_FRMCNT_MASK 0x1000
@@ -48,17 +57,27 @@ static int Gpio, ps_i2c0;
 static struct { unsigned char *framePtr[1]; int curFrame;
     struct { int width, height; } vMode; } dispCtrl;
 static int attempts, stage, fail_attempts, reset_fail, config_fail, start_fail;
-static int dma_fail, i2c_fail, fault, resets;
+static int dma_fail, i2c_fail, fault, resets, receiver_fail;
 static u32 packets, crc;
+static u32 csi_control, dphy_control;
 static int elapsed;
 #define xil_printf(...) ((void)0)
 static void Xil_Out32(u32 addr, u32 value) {
-    assert(addr == 0x1034 && value == 0x1000);
-    elapsed = 0;
+    if (addr == 0x1034) {
+        assert(value == 0x1000); elapsed = 0; return;
+    }
+    if (addr == 0x2000) { csi_control = receiver_fail ? 0 : value; return; }
+    if (addr == 0x3000) { dphy_control = receiver_fail ? 0 : value; return; }
+    assert(0);
 }
 static u32 Xil_In32(u32 addr) {
     if (addr == 0x2004) return packets;
     if (addr == 0x2008) return crc;
+    if (addr == 0x2000) return csi_control;
+    if (addr == 0x3000) return dphy_control;
+    if (addr == 0x200c) return 0x00010001;
+    if (addr == 0x300c) return 0x00010002;
+    if (addr == 0x4004) return 0;
     assert(addr == 0x1034);
     if (fault == 3) return 0;
     if (fault == 4) return 0x1001;
@@ -94,8 +113,8 @@ static int sensor_start(int *iic) {
 }
 static void clear(void) {
     attempts = stage = fail_attempts = reset_fail = config_fail = start_fail = 0;
-    dma_fail = i2c_fail = fault = resets = elapsed = 0;
-    packets = crc = 0;
+    dma_fail = i2c_fail = fault = resets = elapsed = receiver_fail = 0;
+    packets = crc = csi_control = dphy_control = 0;
 }
 '''
 tests = r'''
@@ -108,19 +127,18 @@ int main(void) {
     clear(); dma_fail = 1; assert(CameraStart() == 1 && attempts == 3);
     clear(); start_fail = 1; assert(CameraStart() == 1 && attempts == 3);
     clear(); i2c_fail = 1; assert(CameraStart() == 1 && attempts == 0 && resets == 4);
+    clear(); receiver_fail = 1; assert(CameraStart() == 1 && attempts == 0 && resets == 4);
     for (int i = 1; i <= 5; ++i) {
         clear(); attempts = 1; fault = i; assert(CameraCheck(0) == 1);
     }
     clear(); attempts = 1; packets = UINT32_MAX - 50;
     assert(CameraCheck(0) == 0); /* Counter wrap is still progress. */
     assert(CameraCheck(0) == 0); /* Requires fresh completion each window. */
-    puts("PASS: 15 camera startup/health fault-injection checks");
+    puts("PASS: camera startup/reset/health fault-injection checks");
     return 0;
 }
 '''
-build = root / "build"
-build.mkdir(exist_ok=True)
-with tempfile.TemporaryDirectory(prefix="camera_test_", dir=build) as tmp:
+with tempfile.TemporaryDirectory(prefix="camera_test_") as tmp:
     cfile = Path(tmp) / "test.c"
     exe = Path(tmp) / "test.exe"
     cfile.write_text(prefix + functions + tests)

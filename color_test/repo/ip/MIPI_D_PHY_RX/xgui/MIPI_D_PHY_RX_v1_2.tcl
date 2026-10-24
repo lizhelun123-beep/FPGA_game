@@ -8,6 +8,8 @@ proc init_gui { IPINST } {
   #Adding Page
   set Control [ipgui::add_page $IPINST -name "Control"]
   ipgui::add_param $IPINST -name "kGenerateAXIL" -parent ${Control}
+  set kPPISharedEnable [ipgui::add_param $IPINST -name "kPPISharedEnable" -parent ${Control}]
+  set_property tooltip {Enable only when all active clock/data PPI enables are the same registered control, as in the canonical CSI receiver. Synchronize once and distribute in RefClk. Leave unchecked for independent lane control.} ${kPPISharedEnable}
   set kLPFromLane0 [ipgui::add_param $IPINST -name "kLPFromLane0" -parent ${Control}]
   set_property tooltip {Check if only Lane 0 has low-power signals and should be shared between all data lanes.} ${kLPFromLane0}
   set kDebug [ipgui::add_param $IPINST -name "kDebug" -parent ${Control}]
@@ -263,3 +265,6 @@ proc update_MODELPARAM_VALUE.kLPFromLane0 { MODELPARAM_VALUE.kLPFromLane0 PARAM_
 	set_property value [get_property value ${PARAM_VALUE.kLPFromLane0}] ${MODELPARAM_VALUE.kLPFromLane0}
 }
 
+proc update_MODELPARAM_VALUE.kPPISharedEnable { MODELPARAM_VALUE.kPPISharedEnable PARAM_VALUE.kPPISharedEnable } {
+	set_property value [get_property value ${PARAM_VALUE.kPPISharedEnable}] ${MODELPARAM_VALUE.kPPISharedEnable}
+}

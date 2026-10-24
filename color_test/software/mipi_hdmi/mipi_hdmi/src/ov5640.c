@@ -350,31 +350,62 @@ int sensor_write_array(XIicPs *IicInstance, struct reginfo *regarray)
 	return XST_SUCCESS;
 }
 
-static int sensor_verify_raw_mode(XIicPs *IicInstance)
+struct sensor_reg_check
 {
-	static const struct reginfo expected[] = {
-		{0x3034, 0x1a}, /* MIPI RAW10 */
-		{0x3808, 0x05}, {0x3809, 0x00}, /* 1280 */
-		{0x380a, 0x02}, {0x380b, 0xd0}, /* 720 */
-		{0x4300, 0x00}, /* RAW, BGGR */
-		{0x5000, 0x06}, /* BPC/WPC, no sensor CIP */
-		{0x5001, 0x00}, /* no color ISP on RAW */
-		{0x501f, 0x03}, /* ISP RAW(DPC) */
-		{SEQUENCE_END, 0x00}
-	};
-	u8 value = 0;
+	u16 reg;
+	u8 expected;
+};
+
+/* Registers that define the complete 720p RAW10 MIPI stream contract. */
+static const struct sensor_reg_check sensor_mipi_checks[] = {
+	{0x300e, 0x45}, /* two lanes, MIPI enabled, HS transmitter powered */
+	{0x3018, 0x00}, /* MIPI pad/lane input-output control */
+	{0x3034, 0x1a}, /* 10-bit MIPI output */
+	{0x3035, 0x21}, /* system and MIPI scale dividers */
+	{0x3036, 0x46}, /* PLL multiplier */
+	{0x3037, 0x05}, /* PLL root/pre-divider */
+	{0x3108, 0x11}, /* PCLK/SCLK root dividers */
+	{0x3808, 0x05}, {0x3809, 0x00}, /* output width 1280 */
+	{0x380a, 0x02}, {0x380b, 0xd0}, /* output height 720 */
+	{0x4300, 0x00}, /* RAW BGGR formatter */
+	{0x4800, 0x14}, /* MIPI line-short-packet and LP11 behavior */
+	{0x4837, 0x24}, /* MIPI global timing for the 56 MHz pixel clock */
+	{0x5000, 0x06}, /* bad/white-pixel correction only */
+	{0x5001, 0x00}, /* sensor AWB/CCM disabled */
+	{0x501f, 0x03}, /* ISP mux selects RAW(DPC) */
+	{SEQUENCE_END, 0x00}
+};
+
+int sensor_log_mipi_config(XIicPs *IicInstance)
+{
+	u8 value;
 	int i;
 	int status;
 
-	for (i = 0; expected[i].reg != SEQUENCE_END; ++i) {
+	for (i = 0; sensor_mipi_checks[i].reg != SEQUENCE_END; ++i) {
 		value = 0;
-		status = ov5640_read(IicInstance, expected[i].reg, &value);
-		if (status != XST_SUCCESS || value != expected[i].val) {
-			xil_printf("OV5640 RAW mode verify failed: reg=0x%04x read=0x%02x expected=0x%02x status=%d\r\n",
-				expected[i].reg, value, expected[i].val, status);
+		status = ov5640_read(IicInstance, sensor_mipi_checks[i].reg, &value);
+		if (status != XST_SUCCESS) {
+			xil_printf("OV5640 REG %04x read failed: %d\r\n",
+				sensor_mipi_checks[i].reg, status);
+			return XST_FAILURE;
+		}
+		xil_printf("OV5640 REG %04x = %02x\r\n",
+			sensor_mipi_checks[i].reg, value);
+		if (value != sensor_mipi_checks[i].expected) {
+			xil_printf("OV5640 REG %04x mismatch: expected %02x\r\n",
+				sensor_mipi_checks[i].reg,
+				sensor_mipi_checks[i].expected);
 			return XST_FAILURE;
 		}
 	}
+	return XST_SUCCESS;
+}
+
+static int sensor_verify_raw_mode(XIicPs *IicInstance)
+{
+	if (sensor_log_mipi_config(IicInstance) != XST_SUCCESS)
+		return XST_FAILURE;
 	xil_printf("OV5640 RAW10 verified: 1280x720 BGGR, DPC only\r\n");
 	return XST_SUCCESS;
 }
@@ -402,6 +433,7 @@ int sensor_configure(XIicPs *IicInstance)
 	else
 	{
 		xil_printf("Got ov5640 id, %x %x\r\n", sensor_id[0], sensor_id[1]);
+		xil_printf("STAGE 1: OV5640 I2C OK\r\n");
 	}
 
 	//[1]=0 System input clock from pad; Default read = 0x11
@@ -458,7 +490,9 @@ int sensor_start(XIicPs *IicInstance)
 		xil_printf("OV5640 0x3008 read failed: %d\r\n", status);
 		return XST_FAILURE;
 	}
-	xil_printf("OV5640 0x3008 = 0x%02x (expected 0x02)\r\n", control);
+	xil_printf("OV5640 REG 3008 = %02x\r\n", control);
+	if (control == 0x02)
+		xil_printf("OV5640 stream enabled: software standby released\r\n");
 	return control == 0x02 ? XST_SUCCESS : XST_FAILURE;
 }
 

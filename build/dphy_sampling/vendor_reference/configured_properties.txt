@@ -1,0 +1,144 @@
+Property                              Type     Read-only  Value
+ALLOWED_SIM_MODELS                    string*  true       rtl
+BASE_BOARD_PART                       string   true       
+BOARD                                 string   true       
+BOARD_CONNECTIONS                     string   true       
+CLASS                                 string   true       ip
+CONFIG.AXIS_TDATA_WIDTH               string   false      32
+CONFIG.AXIS_TDEST_WIDTH               string   false      4
+CONFIG.AXIS_TUSER_WIDTH               string   false      96
+CONFIG.CLK.DPHY_CLK_200M.INSERT_VIP   string   false      0
+CONFIG.CLK.LITE_ACLK.INSERT_VIP       string   false      0
+CONFIG.CLK.RXBYTECLKHS.INSERT_VIP     string   false      0
+CONFIG.CLK.VIDEO_ACLK.INSERT_VIP      string   false      0
+CONFIG.CLK_LANE_IO_LOC                string   false      None
+CONFIG.CLK_LANE_IO_LOC_NAME           string   false      None
+CONFIG.CMN_FIFO_RD_EN_CNTRL           string   false      true
+CONFIG.CMN_INC_IIC                    string   false      false
+CONFIG.CMN_INC_VFB                    string   false      true
+CONFIG.CMN_NUM_LANES                  string   false      2
+CONFIG.CMN_NUM_PIXELS                 string   false      1
+CONFIG.CMN_PROJ_FAMILY                string   false      0
+CONFIG.CMN_PXL_FORMAT                 string   false      RAW10
+CONFIG.CMN_VC                         string   false      All
+CONFIG.CSIRXSS_S_AXI.INSERT_VIP       string   false      0
+CONFIG.CSI_BUF_DEPTH                  string   false      2048
+CONFIG.CSI_CONTROLLER_REG_IF          string   false      true
+CONFIG.CSI_EMB_NON_IMG                string   false      false
+CONFIG.C_CAL_MODE                     string   false      FIXED
+CONFIG.C_CLK_IO_SWAP                  string   false      false
+CONFIG.C_CLK_LANE_IO_POSITION         string   false      0
+CONFIG.C_CLK_LP_IO_SWAP               string   false      false
+CONFIG.C_CSI2RX_DBG                   string   false      0
+CONFIG.C_CSI_EN_ACTIVELANES           string   false      false
+CONFIG.C_CSI_EN_CRC                   string   false      true
+CONFIG.C_CSI_FILTER_USERDATATYPE      string   false      false
+CONFIG.C_CSI_OPT1_REGS                string   false      false
+CONFIG.C_DATA_LANE0_IO_POSITION       string   false      2
+CONFIG.C_DATA_LANE1_IO_POSITION       string   false      4
+CONFIG.C_DATA_LANE2_IO_POSITION       string   false      6
+CONFIG.C_DATA_LANE3_IO_POSITION       string   false      8
+CONFIG.C_DL0_IO_SWAP                  string   false      false
+CONFIG.C_DL0_LP_IO_SWAP               string   false      false
+CONFIG.C_DL1_IO_SWAP                  string   false      false
+CONFIG.C_DL1_LP_IO_SWAP               string   false      false
+CONFIG.C_DL2_IO_SWAP                  string   false      false
+CONFIG.C_DL2_LP_IO_SWAP               string   false      false
+CONFIG.C_DL3_IO_SWAP                  string   false      false
+CONFIG.C_DL3_LP_IO_SWAP               string   false      false
+CONFIG.C_DPHY_LANES                   string   false      2
+CONFIG.C_DPHY_MODE                    string   false      SLAVE
+CONFIG.C_EN_7S_LINERATE_CHECK         string   false      true
+CONFIG.C_EN_BG0_PIN0                  string   false      false
+CONFIG.C_EN_BG0_PIN6                  string   false      false
+CONFIG.C_EN_BG1_PIN0                  string   false      false
+CONFIG.C_EN_BG1_PIN6                  string   false      false
+CONFIG.C_EN_BG2_PIN0                  string   false      false
+CONFIG.C_EN_BG2_PIN6                  string   false      false
+CONFIG.C_EN_BG3_PIN0                  string   false      false
+CONFIG.C_EN_BG3_PIN6                  string   false      false
+CONFIG.C_EN_CLK300M                   string   false      false
+CONFIG.C_EN_CNTS_BYTE_CLK             string   false      false
+CONFIG.C_EN_CSI_V2_0                  string   false      false
+CONFIG.C_EN_EXDESIGNS                 string   false      false
+CONFIG.C_EN_EXT_TAP                   string   false      false
+CONFIG.C_EN_RXPPI_AS_MON              string   false      false
+CONFIG.C_EN_TIMEOUT_REGS              string   false      false
+CONFIG.C_EN_VCX                       string   false      false
+CONFIG.C_ESC_TIMEOUT                  string   false      25600
+CONFIG.C_EXDESBOARD_VERSION           string   false      2
+CONFIG.C_EXDES_BOARD                  string   false      ZCU102
+CONFIG.C_EXDES_CONFIG                 string   false      MIPI_Video_Pipe_Camera_to_Display
+CONFIG.C_EXDES_FMC                    string   false      LI-IMX274MIPI-FMC V1.0 Single Sensor
+CONFIG.C_EXT_MMCM                     string   false      0
+CONFIG.C_FIFO_RD_EN_CONTROL           string   false      true
+CONFIG.C_HS_LINE_RATE                 string   false      1000
+CONFIG.C_HS_SETTLE_NS                 string   false      145
+CONFIG.C_HS_TIMEOUT                   string   false      65541
+CONFIG.C_IDLY_GROUP_NAME              string   false      mipi_csi2rx_idly_group
+CONFIG.C_IDLY_TAP                     string   false      5
+CONFIG.C_INIT                         string   false      100000
+CONFIG.C_INT_QOR_CHECK                string   false      0
+CONFIG.C_IS_7SERIES                   string   false      true
+CONFIG.C_IS_VERSAL                    string   false      false
+CONFIG.C_LPRX_DISABLE_EXTPORT         string   false      0
+CONFIG.C_MIPI_SLV_INT                 string   false      0
+CONFIG.C_OOC_VID_CLK                  string   false      6.666
+CONFIG.C_RCVE_ALT_DESKEW_SEQ          string   false      false
+CONFIG.C_RCVE_DESKEW_SEQ              string   false      false
+CONFIG.C_SHARE_IDLYCTRL               string   false      true
+CONFIG.C_SPRT_ISP_BRIDGE              string   false      false
+CONFIG.C_STRETCH_LINE_RATE            string   false      3500
+CONFIG.Component_Name                 string   true       alinx_csi_reference
+CONFIG.DATA_LANE0_BYTE                string   false      All_Byte
+CONFIG.DATA_LANE0_IO_LOC              string   false      None
+CONFIG.DATA_LANE0_IO_LOC_NAME         string   false      None
+CONFIG.DATA_LANE1_BYTE                string   false      All_Byte
+CONFIG.DATA_LANE1_IO_LOC              string   false      None
+CONFIG.DATA_LANE1_IO_LOC_NAME         string   false      None
+CONFIG.DATA_LANE2_BYTE                string   false      All_Byte
+CONFIG.DATA_LANE2_IO_LOC              string   false      None
+CONFIG.DATA_LANE2_IO_LOC_NAME         string   false      None
+CONFIG.DATA_LANE3_BYTE                string   false      All_Byte
+CONFIG.DATA_LANE3_IO_LOC              string   false      None
+CONFIG.DATA_LANE3_IO_LOC_NAME         string   false      None
+CONFIG.DPHYRX_BOARD_INTERFACE         string   false      Custom
+CONFIG.DPHY_PRESET                    string   false      CSI2RX_XLNX
+CONFIG.DPY_EN_REG_IF                  string   false      true
+CONFIG.DPY_LINE_RATE                  string   false      1000
+CONFIG.HP_IO_BANK_SELECTION           string   false      64
+CONFIG.RST.LITE_ARESETN.INSERT_VIP    string   false      0
+CONFIG.RST.SYSTEM_RST_OUT.INSERT_VIP  string   false      0
+CONFIG.RST.VIDEO_ARESETN.INSERT_VIP   string   false      0
+CONFIG.SupportLevel                   string   false      1
+CONFIG.USE_BOARD_FLOW                 string   false      false
+CONFIG.VFB_TU_WIDTH                   string   false      1
+CONFIG.VIDEO_OUT.INSERT_VIP           string   false      0
+CONFIG.YUV420_BUF_DPTH                string   false      128
+CORE_REVISION                         long     true       0
+DCP_RESOURCE_DATA                     string   true       
+DELIVERED_TARGETS                     string*  true       
+DESIGN_TOOL_CONTEXTS                  string*  true       HDL IPI Sysgen
+IPDEF                                 string   true       xilinx.com:ip:mipi_csi2_rx_subsystem:5.3
+IP_CORE_CONTAINER                     string   true       
+IP_DIR                                string   true       d:/Workspace/AMD_camera/FPGA-main/FPGA-main/build/dphy_sampling/vendor_reference/alinx_csi_reference
+IP_FILE                               string   true       d:/Workspace/AMD_camera/FPGA-main/FPGA-main/build/dphy_sampling/vendor_reference/alinx_csi_reference/alinx_csi_reference.xci
+IS_BD_CONTEXT                         bool     true       0
+IS_BOARD_AWARE                        bool     true       1
+IS_LOCKED                             bool     true       0
+KNOWN_TARGETS                         string*  true       instantiation_template synthesis simulation implementation example changelog
+LOCK_DETAILS                          string*  true       
+NAME                                  string   true       alinx_csi_reference
+PART                                  string   true       xc7z020clg400-2
+REQUIRES_VIP                          bool     true       
+SCOPE                                 string   true       
+SELECTED_SIM_MODEL                    enum     false      rtl
+STALE_TARGETS                         string*  true       
+SUPPORTED_TARGETS                     string*  true       instantiation_template synthesis simulation implementation example changelog
+SUPPORTS_MODREF                       bool     true       1
+SW_VERSION                            string   true       2023.1
+UNSUPPORTED_SIMULATORS                string*  true       
+UPGRADE_RESULT                        string   true       
+UPGRADE_VERSIONS                      string*  true       
+USED_LICENSE_KEYS                     string*  true       
+USER_LOCKED                           bool     false      0

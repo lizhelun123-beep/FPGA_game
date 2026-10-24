@@ -1,0 +1,71 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2023.1 (win64) Build 3865809 Sun May  7 15:05:29 MDT 2023
+| Date         : Sun Oct 18 19:04:03 2026
+| Host         : iband running 64-bit major release  (build 9200)
+| Command      : report_ip_status
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+IP Status Summary
+
+1. Project IP Status
+--------------------
+Your project uses 10 IP. Some of these IP may have undergone changes in this release of the software. Please review the recommended actions.
+
+More information on the Xilinx versioning policy is available at www.xilinx.com.
+
+Project IP Instances
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| Instance Name                  | Status     | Recommendation      | Change    | IP Name            | IP      | New Version   | New        | Original Part        |
+|                                |            |                     | Log       |                    | Version |               | License    |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| alinx_csi_reference            | Up-to-date | No changes required |  *(1)     | MIPI CSI-2 Rx      | 5.3     | 5.3           | Included   | xc7z020clg400-2      |
+|                                |            |                     |           | Subsystem          |         |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| bd_b733_phy_0                  | Up-to-date | No changes required |  *(2)     | MIPI D-PHY         | 4.3     | 4.3 (Rev. 6)  | Included   | xc7z020clg400-2      |
+|                                |            |                     |           |                    | (Rev.   |               |            |                      |
+|                                |            |                     |           |                    | 6)      |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| bd_b733_r_sync_0               | Up-to-date | No changes required |  *(3)     | Processor System   | 5.0     | 5.0 (Rev. 13) | Included   | xc7z020clg400-2      |
+|                                |            |                     |           | Reset              | (Rev.   |               |            |                      |
+|                                |            |                     |           |                    | 13)     |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| bd_b733_rx_0                   | Up-to-date | No changes required |  *(4)     | MIPI CSI-2 Rx      | 1.0     | 1.0 (Rev. 8)  | Included   | xc7z020clg400-2      |
+|                                |            |                     |           | Controller         | (Rev.   |               |            |                      |
+|                                |            |                     |           |                    | 8)      |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| bd_b733_vfb_0_0                | Up-to-date | No changes required | Change    | Video Format       | 1.0     | 1.0 (Rev. 22) | Included   | xc7z020clg400-2      |
+|                                |            |                     | Log not   | Bridge             | (Rev.   |               |            |                      |
+|                                |            |                     | available |                    | 22)     |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| bd_b733_xbar_0                 | Up-to-date | No changes required |  *(5)     | AXI Crossbar       | 2.1     | 2.1 (Rev. 29) | Included   | xc7z020clg400-2      |
+|                                |            |                     |           |                    | (Rev.   |               |            |                      |
+|                                |            |                     |           |                    | 29)     |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| bd_b733_vfb_0_0_axis_converter | Up-to-date | No changes required |  *(6)     | AXI4-Stream Data   | 1.1     | 1.1 (Rev. 27) | Included   | xc7z020clg400-2      |
+|                                |            |                     |           | Width Converter    | (Rev.   |               |            |                      |
+|                                |            |                     |           |                    | 27)     |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| bd_b733_vfb_0_0_axisswitch     | Up-to-date | No changes required |  *(7)     | AXI4-Stream Switch | 1.1     | 1.1 (Rev. 28) | Included   | xc7z020clg400-2      |
+|                                |            |                     |           |                    | (Rev.   |               |            |                      |
+|                                |            |                     |           |                    | 28)     |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| bd_b733_vfb_0_0_sli            | Up-to-date | No changes required |  *(8)     | AXI4-Stream        | 1.1     | 1.1 (Rev. 28) | Included   | xc7z020clg400-2      |
+|                                |            |                     |           | Register Slice     | (Rev.   |               |            |                      |
+|                                |            |                     |           |                    | 28)     |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+| bd_b733_vfb_0_0_slo            | Up-to-date | No changes required |  *(9)     | AXI4-Stream        | 1.1     | 1.1 (Rev. 28) | Included   | xc7z020clg400-2      |
+|                                |            |                     |           | Register Slice     | (Rev.   |               |            |                      |
+|                                |            |                     |           |                    | 28)     |               |            |                      |
++--------------------------------+------------+---------------------+-----------+--------------------+---------+---------------+------------+----------------------+
+*(1) d:/Xilinx/Vivado/2023.1/data/ip/xilinx/mipi_csi2_rx_subsystem_v5_3/doc/mipi_csi2_rx_subsystem_v5_3_changelog.txt
+*(2) d:/Xilinx/Vivado/2023.1/data/ip/xilinx/mipi_dphy_v4_3/doc/mipi_dphy_v4_3_changelog.txt
+*(3) d:/Xilinx/Vivado/2023.1/data/ip/xilinx/proc_sys_reset_v5_0/doc/proc_sys_reset_v5_0_changelog.txt
+*(4) d:/Xilinx/Vivado/2023.1/data/ip/xilinx/mipi_csi2_rx_ctrl_v1_0/doc/mipi_csi2_rx_ctrl_v1_0_changelog.txt
+*(5) d:/Xilinx/Vivado/2023.1/data/ip/xilinx/axi_crossbar_v2_1/doc/axi_crossbar_v2_1_changelog.txt
+*(6) d:/Xilinx/Vivado/2023.1/data/ip/xilinx/axis_dwidth_converter_v1_1/doc/axis_dwidth_converter_v1_1_changelog.txt
+*(7) d:/Xilinx/Vivado/2023.1/data/ip/xilinx/axis_switch_v1_1/doc/axis_switch_v1_1_changelog.txt
+*(8) d:/Xilinx/Vivado/2023.1/data/ip/xilinx/axis_register_slice_v1_1/doc/axis_register_slice_v1_1_changelog.txt
+*(9) d:/Xilinx/Vivado/2023.1/data/ip/xilinx/axis_register_slice_v1_1/doc/axis_register_slice_v1_1_changelog.txt
+
+

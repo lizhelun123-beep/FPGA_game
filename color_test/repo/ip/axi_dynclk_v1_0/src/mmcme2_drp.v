@@ -57,6 +57,7 @@ module mmcme2_drp
       input             SEN,
       input             SCLK,
       input             RST,
+      input             LOCKED_SYNC_I,
       output reg        SRDY,
 		
 		input 	[35:0]	S1_CLKOUT0,
@@ -228,7 +229,8 @@ module mmcme2_drp
             // reconfiguration event.
             next_state_count = STATE_COUNT_CONST ;
             
-            if(LOCKED) begin
+            // Both FSMs consume the one shared SCLK-domain lock bridge.
+            if(LOCKED_SYNC_I) begin
                // MMCM is locked, go on to wait for the SEN signal
                next_state  = WAIT_SEN;
                // Assert SRDY to indicate that the reconfiguration module is

@@ -24,7 +24,8 @@ module tb_axis_color_highlight;
     axis_color_highlight #(
         // Predicate/sideband checks use bypass so their original boundaries
         // remain independent of the separately checked white-balance stage.
-        .ENABLE_WHITE_BALANCE(0)
+        .ENABLE_WHITE_BALANCE(0),
+        .ENABLE_HIGHLIGHT(1)
     ) dut (
         .aclk          (aclk),
         .s_axis_tdata  (s_axis_tdata),

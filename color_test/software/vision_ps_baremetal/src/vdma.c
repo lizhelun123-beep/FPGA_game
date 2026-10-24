@@ -5,26 +5,38 @@
 #include "xparameters.h"
 #include "xil_io.h"
 
-/* Video parameter readback is optional; retain the configured height. */
-static u32 capture_vsize;
+static int vdma_capture_index(unsigned int *FrameIndex)
+{
+	UINTPTR base = XPAR_AXIVDMA_1_BASEADDR;
+	u32 park;
+	unsigned int current;
+	if (FrameIndex == NULL) return XST_FAILURE;
+	park = Xil_In32(base + XAXIVDMA_PARKPTR_OFFSET);
+	current = (park & XAXIVDMA_PARKPTR_WRTSTR_MASK) >> XAXIVDMA_WRTSTR_SHIFT;
+	if (current >= VDMA_CAPTURE_FRAME_COUNT) return XST_FAILURE;
+	*FrameIndex = current;
+	return XST_SUCCESS;
+}
 
-int vdma_capture_next(void)
+int vdma_capture_current(unsigned int *FrameIndex)
+{
+	return vdma_capture_index(FrameIndex);
+}
+
+int vdma_capture_ready(unsigned int *FrameIndex)
 {
 	UINTPTR base = XPAR_AXIVDMA_1_BASEADDR;
 	u32 status = Xil_In32(base + XAXIVDMA_RX_OFFSET + XAXIVDMA_SR_OFFSET);
-	u32 control;
-	if (!capture_vsize || !(status & XAXIVDMA_SR_HALTED_MASK) ||
-	    (status & XAXIVDMA_SR_ERR_ALL_MASK)) return XST_FAILURE;
+	unsigned int current;
+	if ((status & (XAXIVDMA_SR_HALTED_MASK | XAXIVDMA_SR_ERR_ALL_MASK)) ||
+	    !(status & XAXIVDMA_IXR_FRMCNT_MASK) ||
+	    vdma_capture_index(&current) != XST_SUCCESS) return XST_FAILURE;
+	/* The current store is being written. The preceding store is the newest
+	 * complete frame and remains untouched for at least one more frame. */
+	*FrameIndex = (current + VDMA_CAPTURE_FRAME_COUNT - 1U) %
+		VDMA_CAPTURE_FRAME_COUNT;
 	Xil_Out32(base + XAXIVDMA_RX_OFFSET + XAXIVDMA_SR_OFFSET,
 		XAXIVDMA_IXR_FRMCNT_MASK);
-	control = Xil_In32(base + XAXIVDMA_RX_OFFSET + XAXIVDMA_CR_OFFSET);
-	control = (control & ~XAXIVDMA_FRMCNT_MASK) |
-		(1U << XAXIVDMA_FRMCNT_SHIFT) | XAXIVDMA_CR_FRMCNT_EN_MASK |
-		XAXIVDMA_CR_RUNSTOP_MASK;
-	Xil_Out32(base + XAXIVDMA_RX_OFFSET + XAXIVDMA_CR_OFFSET, control);
-	/* VSIZE write commits/restarts the already configured transfer. */
-	Xil_Out32(base + XAXIVDMA_S2MM_ADDR_OFFSET + XAXIVDMA_VSIZE_OFFSET,
-		capture_vsize);
 	return XST_SUCCESS;
 }
 
@@ -34,7 +46,6 @@ int vdma_write_reset(short DeviceID)
 	XAxiVdma_Config *Config = XAxiVdma_LookupConfig(DeviceID);
 	u32 timeout;
 	UINTPTR control;
-	capture_vsize = 0;
 	if (Config == NULL) return XST_FAILURE;
 	control = Config->BaseAddress + XAXIVDMA_RX_OFFSET + XAXIVDMA_CR_OFFSET;
 	Xil_Out32(control, Xil_In32(control) | XAXIVDMA_CR_RESET_MASK);
@@ -155,7 +166,8 @@ int vdma_write_stop(XAxiVdma *Vdma) {
 }
 
 
-int vdma_write_init(short DeviceID,short HoriSizeInput,short VertSizeInput,short Stride,unsigned int FrameStoreStartAddr)
+int vdma_write_init(short DeviceID, short HoriSizeInput, short VertSizeInput,
+	short Stride, const UINTPTR FrameStoreStartAddr[VDMA_CAPTURE_FRAME_COUNT])
 {
 	XAxiVdma Vdma;
 	XAxiVdma_Config *Config;
@@ -177,9 +189,11 @@ int vdma_write_init(short DeviceID,short HoriSizeInput,short VertSizeInput,short
 
 
 
-	WriteCfg.EnableCircularBuf = 0;
-	/* Stop in hardware after one whole frame, before CPU access. */
-	WriteCfg.EnableFrameCounter = 1;
+	if (FrameStoreStartAddr == NULL) return XST_FAILURE;
+	/* The CSI source cannot honor downstream backpressure. Keep S2MM running
+	 * continuously and rotate through three capture stores. */
+	WriteCfg.EnableCircularBuf = 1;
+	WriteCfg.EnableFrameCounter = 0;
 	WriteCfg.FixedFrameStoreAddr = 0;
 
 	WriteCfg.EnableSync = 0;
@@ -200,12 +214,10 @@ int vdma_write_init(short DeviceID,short HoriSizeInput,short VertSizeInput,short
 	}
 
 
-	/* The driver reads every hardware frame-store entry, even in park mode. */
 	{
 		unsigned int i;
-		for (i = 0; i < sizeof(WriteCfg.FrameStoreStartAddr) /
-			sizeof(WriteCfg.FrameStoreStartAddr[0]); ++i)
-			WriteCfg.FrameStoreStartAddr[i] = FrameStoreStartAddr;
+		for (i = 0; i < VDMA_CAPTURE_FRAME_COUNT; ++i)
+			WriteCfg.FrameStoreStartAddr[i] = FrameStoreStartAddr[i];
 	}
 
 	Status = XAxiVdma_DmaSetBufferAddr(&Vdma, XAXIVDMA_WRITE, WriteCfg.FrameStoreStartAddr);
@@ -215,7 +227,7 @@ int vdma_write_init(short DeviceID,short HoriSizeInput,short VertSizeInput,short
 	}
 
 
-	/* Poll frame-completion status with a threshold of one frame. */
+	/* Latch a completion indication after every frame without stopping S2MM. */
 	{
 		UINTPTR control = Config->BaseAddress + XAXIVDMA_RX_OFFSET + XAXIVDMA_CR_OFFSET;
 		u32 value = Xil_In32(control);
@@ -227,7 +239,6 @@ int vdma_write_init(short DeviceID,short HoriSizeInput,short VertSizeInput,short
 		   xil_printf("error starting VDMA..!");
 		   return Status;
 	}
-	capture_vsize = (u32)VertSizeInput;
 	return XST_SUCCESS;
 
 }

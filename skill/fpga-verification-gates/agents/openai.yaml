@@ -1,0 +1,4 @@
+interface:
+  display_name: "FPGA 黄金参考与验收证据"
+  short_description: "审查算法、AXI 契约、IP 来源、时序及性能资源的验证边界"
+  default_prompt: "使用 $fpga-verification-gates 审查本轮 FPGA 改动的验收证据，保留失败项并选择最便宜的有效验证。"

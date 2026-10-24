@@ -3,11 +3,12 @@
 // AXI4-Stream RGB888 white-balance and pixel highlighter.
 //
 // The RAW pipeline ahead of this block provides demosaic and gamma but no
-// usable AWB in RAW(DPC) mode, so conservative red/blue gains are applied
-// before colour classification.  Two elastic AXI register stages separate
-// white balance from classification and preserve all packet sidebands while
+// usable AWB in RAW(DPC) mode.  The current validation build keeps all three
+// channels at unity gain before colour classification.  Two elastic AXI
+// register stages preserve all packet sidebands while
 // meeting the 142.857 MHz video clock under downstream backpressure.
 module axis_color_highlight #(
+    parameter integer ENABLE_HIGHLIGHT = 0,
     parameter integer ENABLE_WHITE_BALANCE = 1,
     parameter integer BLUE_MIN_B = 100,
     parameter integer RED_MIN_R = 120,
@@ -49,14 +50,11 @@ module axis_color_highlight #(
     wire [7:0] raw_green = s_axis_tdata[15:8];
     wire [7:0] raw_blue  = s_axis_tdata[7:0];
 
-    // Fixed 1.5x R/B gains are shift-add operations.  Avoiding a generic Q8
-    // multiplier keeps the 142.857 MHz Gamma -> VDMA path within timing.
-    // Recalibrate these two expressions with a grey card if the optics or
-    // illuminant changes.
-    wire [8:0] red_gained = {1'b0, raw_red} + ({1'b0, raw_red} >> 1);
-    wire [8:0] blue_gained = {1'b0, raw_blue} + ({1'b0, raw_blue} >> 1);
-    wire [7:0] balanced_red = red_gained[8] ? 8'hff : red_gained[7:0];
-    wire [7:0] balanced_blue = blue_gained[8] ? 8'hff : blue_gained[7:0];
+    // Unity white-balance validation point: R/G/B = 1.0/1.0/1.0.  Keep this
+    // explicit so later grey-card calibration cannot be confused with a Bayer
+    // or downstream channel-order correction.
+    wire [7:0] balanced_red = raw_red;
+    wire [7:0] balanced_blue = raw_blue;
 
     wire [7:0] input_red = ENABLE_WHITE_BALANCE ? balanced_red : raw_red;
     wire [7:0] input_blue = ENABLE_WHITE_BALANCE ? balanced_blue : raw_blue;
@@ -125,7 +123,7 @@ module axis_color_highlight #(
         if (out_ready) begin
             out_valid <= wb_valid;
             if (wb_valid) begin
-                out_data <= highlighted_rgb;
+                out_data <= ENABLE_HIGHLIGHT ? highlighted_rgb : wb_data;
                 out_keep <= wb_keep;
                 out_user <= wb_user;
                 out_last <= wb_last;

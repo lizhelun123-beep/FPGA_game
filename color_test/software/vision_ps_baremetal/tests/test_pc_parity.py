@@ -37,13 +37,12 @@ def reference_mask(h, s, v, config):
 class PcParityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        build = ROOT / "color_test" / "build"
-        build.mkdir(exist_ok=True)
-        cls.temp = tempfile.TemporaryDirectory(prefix="vision_parity_", dir=build)
+        cls.temp = tempfile.TemporaryDirectory(prefix="vision_parity_")
         cls.probe = Path(cls.temp.name) / "vision_probe.exe"
         subprocess.run([
             "gcc", "-std=c99", "-O2", "-Wall", "-Wextra", "-Werror",
             "-I" + str(APP / "src"), str(APP / "src" / "vision_ps.c"),
+            str(APP / "src" / "green_target_detector.c"),
             str(APP / "tests" / "vision_probe.c"), "-lm", "-o", str(cls.probe)
         ], check=True)
         cls.config = load_config()
@@ -109,19 +108,23 @@ class PcParityTests(unittest.TestCase):
                 self.assertEqual(actual, reference_mask(*hsv, self.config))
 
     def test_synthetic_classes_bbox_center_and_stride(self):
-        for kind in COLORS:
+        # TARGET is covered by the dedicated green-target real/synthetic tests.
+        # Its detector intentionally accepts a plain green disk/annulus, whereas
+        # this PC multi-class fixture models the retired marker-based target.
+        for kind in (name for name in COLORS if name != "TARGET"):
             with self.subTest(kind=kind):
                 frame = fixture(kind)
                 pc = self.detector.process(frame).detections
                 ps = self.detect_c(frame)
                 self.assertEqual([d.type for d in pc], [kind])
                 self.assertEqual([d["type"] for d in ps], [kind])
+                # SOURCE center is the complete colour+white physical marker
+                # centre on both sides. Its ray still starts at source_tip.
                 self.assertLessEqual(abs(ps[0]["center"][0] - pc[0].center_x), 5)
                 self.assertLessEqual(abs(ps[0]["center"][1] - pc[0].center_y), 5)
-                # PC adopts the closed SOURCE outline while PS deliberately
-                # reports the sampled magenta seed. The sloped edge plus black
-                # stroke reaches a 19 px width difference in this fixture.
-                tolerance = 20 if kind == "SOURCE" else 5
+                # Public bboxes describe the same physical marker/object too;
+                # sampled-grid quantization remains within the normal tolerance.
+                tolerance = 5
                 for actual, expected in zip(ps[0]["bbox"],
                                             (pc[0].bbox_x, pc[0].bbox_y,
                                              pc[0].bbox_w, pc[0].bbox_h)):
@@ -158,9 +161,9 @@ class PcParityTests(unittest.TestCase):
                 cv2.fillPoly(frame, [contour], COLORS["SOURCE"])
                 pc_types = [d.type for d in detector.process(frame).detections]
                 self.assertEqual(pc_types, [] if area == 199 else ["SOURCE"])
-                # PS area is sampled-cell count, so a 199 px contour can round
-                # above its 13-cell (~208 px) gate; this is a recorded tolerance.
-                self.assertEqual([d["type"] for d in self.detect_c(frame)], ["SOURCE"])
+                # PS first morphs on its 4x sampled grid. These deliberately tiny
+                # polygons disappear before its 13-cell (~208 px) area gate.
+                self.assertEqual([d["type"] for d in self.detect_c(frame)], [])
 
 
 if __name__ == "__main__":

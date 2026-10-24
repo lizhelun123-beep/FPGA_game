@@ -1,0 +1,4 @@
+interface:
+  display_name: "流式系统日志与性能分析"
+  short_description: "比较完整累计快照，区分阶段耗时、通信跨度和接收状态语义"
+  default_prompt: "使用 $stream-perf-analysis 分析已有性能日志，给出可信的阶段成本、限制和一个最小后续任务。"

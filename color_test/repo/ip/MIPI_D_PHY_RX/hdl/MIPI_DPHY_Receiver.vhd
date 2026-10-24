@@ -48,7 +48,7 @@ library UNISIM;
 use UNISIM.VComponents.all;
 
 use work.DPHY_types.ALL;
-use work.DebugLib.all;
+use work.DphyDebugLib.all;
 
 entity MIPI_DPHY_Receiver is
 	generic (
@@ -57,6 +57,7 @@ entity MIPI_DPHY_Receiver is
       kVersionMinor : natural := 0; -- TCL-propagated from VLNV
       kNoOfDataLanes : natural range 1 to 2:= 2;
       kGenerateMMCM : boolean := false;
+      kBUFH_DDIRECT_M3 : boolean := false; -- experimental; production default unchanged
       kGenerateAXIL : boolean := false;
       kAddDelayClk_ps : integer := 0;
       kAddDelayData0_ps : integer := 0;
@@ -64,6 +65,9 @@ entity MIPI_DPHY_Receiver is
       kRefClkFreqHz : integer := 200_000_000; -- TCL-propagated
       kDebug : boolean := true;
       kLPFromLane0 : boolean := true;
+      -- Opt in only when all active PPI enables are the SAME source control.
+      -- The default preserves independent clock/data lane control.
+      kPPISharedEnable : boolean := false;
 		-- Parameters of Axi Slave Bus Interface S_AXI_LITE
 		C_S_AXI_LITE_DATA_WIDTH	: integer	:= 32;
 		C_S_AXI_LITE_ADDR_WIDTH	: integer	:= 4;
@@ -215,12 +219,15 @@ signal dDataAligned : dataLaneHSType;
 
 signal RxDDRClkHS_int, RxByteClkHS_int, aRxClkActiveHS_int : std_logic;
 signal cHSClkLocked : std_logic;
+signal cRxClkActiveHS_int : std_logic;
 signal xEnable, xSoftRst  : std_logic;
 
 signal rDlyLckd, rDlyRst, rExtRst, rSoftRst, rSoftEnable, rIntRst : std_logic;
 signal rDlyRstCnt : natural range 0 to kDlyRstDelay - 1 := kDlyRstDelay - 1;
 signal aLaneSCNNEnable : std_logic;
 signal aLaneSFENEnable : std_logic_vector(kNoOfDataLanes-1 downto 0);
+signal rClkEnable : std_logic;
+signal rDataEnable : std_logic_vector(kNoOfDataLanes-1 downto 0);
 
 type PPIRxLaneType is record
    aStopstate : std_logic; --Lane is in Stop state
@@ -351,14 +358,14 @@ YesAXILITE: if kGenerateAXIL generate
          S_AXI_RVALID	=> s_axi_lite_rvalid,
          S_AXI_RREADY	=> s_axi_lite_rready
       );
-CoreSoftReset: entity work.ResetBridge
+CoreSoftReset: entity work.DphyResetBridge
    generic map (
       kPolarity => '1')
    port map (
       aRst => xSoftRst,
       OutClk => RefClk,
       oRst => rSoftRst);
-SyncAsyncClkEnable: entity work.SyncAsync
+SyncAsyncClkEnable: entity work.DphySyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2) --use double FF synchronizer
@@ -378,7 +385,7 @@ end generate;
 -- and decrease the chance of metastability. The signal rExtRst can be used as
 -- asynchronous reset for any flip-flop in the RefClk domain, since it will be de-asserted
 -- synchronously.
-CoreAsyncReset: entity work.ResetBridge
+CoreAsyncReset: entity work.DphyResetBridge
    generic map (
       kPolarity => '1')
    port map (
@@ -421,7 +428,35 @@ end generate GenNoIDELAYCTRL;
 -------------------------------------------------------------------------------
 -- Clock lane modules: enable, input buffer, D-PHY SCNN module
 -------------------------------------------------------------------------------
-aLaneSCNNEnable <= aClkEnable and rSoftEnable and rDlyLckd;
+-- Cross before combining with RefClk-domain conditions. In shared mode the
+-- protocol guarantees identical active lane enables (canonical CSI registers
+-- all of them from vEnable AND video_aresetn). Cross that control ONCE, then
+-- distribute stage 2 in RefClk; parallel CDC chains could resolve differently.
+-- Independent PPI users must leave kPPISharedEnable false. Both modes retain
+-- the original lane pipelines: PPI takes four edges, local software/RDY two.
+SyncPPIClkEnable: entity work.DphySyncAsync
+   generic map (kResetTo => '0', kStages => 2)
+   port map (aReset => '0', aIn => aClkEnable,
+             OutClk => RefClk, oOut => rClkEnable);
+
+SharedPPIEnable: if kPPISharedEnable generate
+   rDataEnable <= (others => rClkEnable);
+   -- Simulation contract check; no new gate, reset or hardware policy.
+   -- synthesis translate_off
+   CheckSharedEnable: process(RefClk)
+   begin
+      if rising_edge(RefClk) then
+         for i in SFEN_Lanes'range loop
+            assert SFEN_Lanes(i).aEnable = aClkEnable
+               report "Shared PPI mode requires identical active lane enables"
+               severity failure;
+         end loop;
+      end if;
+   end process;
+   -- synthesis translate_on
+end generate;
+
+aLaneSCNNEnable <= rClkEnable and rSoftEnable and rDlyLckd;
    
 ClockInputBuffer: entity work.InputBuffer
    Port map (
@@ -436,6 +471,7 @@ ClockInputBuffer: entity work.InputBuffer
 ClockLane: entity work.DPHY_LaneSCNN
    Generic map (
       kGenerateMMCM => false,
+      kBUFH_DDIRECT_M3 => kBUFH_DDIRECT_M3,
       kRefClkFreqHz => kRefClkFreqHz,      
       kAddDelay_ps => kAddAdjDelayClk_ps
    )
@@ -447,6 +483,7 @@ ClockLane: entity work.DPHY_LaneSCNN
       RxDDRClkHS => RxDDRClkHS_int,
       RxByteClkHS => RxByteClkHS_int,
       aRxClkActiveHS => aRxClkActiveHS_int,
+      cRxClkActiveHS => cRxClkActiveHS_int,
       aForceRxmode => aClkForceRxmode,
       aStopstate => aClkStopstate,
       aEnable => aLaneSCNNEnable,
@@ -473,10 +510,18 @@ DataLaneGen: for i in kNoOfDataLanes-1 downto 0 generate
          aHS => HS_Data(i),
          aLP => aLPBuf(i) 
       );
-   aLaneSFENEnable(i) <= SFEN_Lanes(i).aEnable and rSoftEnable and rDlyLckd;
+   IndependentPPIEnable: if not kPPISharedEnable generate
+      SyncPPIDataEnable: entity work.DphySyncAsync
+         generic map (kResetTo => '0', kStages => 2)
+         port map (aReset => '0', aIn => SFEN_Lanes(i).aEnable,
+                   OutClk => RefClk, oOut => rDataEnable(i));
+   end generate;
+
+   aLaneSFENEnable(i) <= rDataEnable(i) and rSoftEnable and rDlyLckd;
       
    DPHY_LaneSFEN_X: entity work.DPHY_LaneSFEN
       Generic map (
+         kBUFH_DDIRECT_M3 => kBUFH_DDIRECT_M3,
          kRefClkFreqHz => kRefClkFreqHz,
          kAddDelay_ps => kAddAdjDelayData0_ps,
          kNoLP => kLPFromLane0 and i /= 0
@@ -497,7 +542,7 @@ DataLaneGen: for i in kNoOfDataLanes-1 downto 0 generate
          
          SerClkHS => RxDDRClkHS_int,
          DivClk => RxByteClkHS_int,
-         aRxClkActiveHS => aRxClkActiveHS_int,
+         cRxClkActiveHS => cRxClkActiveHS_int,
          
          --PPI
          RxByteClkHS => open, --see RxByteClkHS_int below
@@ -580,14 +625,14 @@ ILA_SFEN_RefClkX : ila_sfen_refclk
       probe8(0) => debugSFEN(i).cHSReset
    );
 
-SyncAsyncTrigAck: entity work.SyncAsync
+SyncAsyncTrigAck: entity work.DphySyncAsync
    port map (
       aReset => '0',
       aIn => rbSFEN_TrigInAck(i),
       OutClk => RefClk,
       oOut => rSFEN_TrigInAck(i));
       
-SyncAsyncTrigOut: entity work.SyncAsync
+SyncAsyncTrigOut: entity work.DphySyncAsync
    port map (
       aReset => '0',
       aIn => rSFEN_TrigOut(i),

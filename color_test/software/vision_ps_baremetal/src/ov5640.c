@@ -129,7 +129,7 @@ struct reginfo cfg_720p_60fps[] =
 		{0x3801, 0 & 0xFF},
 		//[2:0]=0 Y address start high byte
 		{0x3802, (8 >> 8) & 0x07},
-		//[7:0]=0 Y address start low byte
+		//[7:0]=8 Y address start low byte
 		{0x3803, 8 & 0xFF},
 
 		//[3:0] X address end high byte
@@ -184,7 +184,7 @@ struct reginfo cfg_720p_60fps[] =
 		{0x3709, 0x52},
 		{0x370c, 0x03},
 
-		//[7:4]=0x0 Formatter RAW, [3:0]=0x0 BGBG/GRGR
+		//[7:4]=0x0 Formatter RAW; this reference window reaches PL as BGGR.
 		{0x4300, 0x00},
 		//[2:0]=0x3 Format select ISP RAW (DPC)
 		{0x501f, 0x03},
@@ -354,9 +354,15 @@ static int sensor_verify_raw_mode(XIicPs *IicInstance)
 {
 	static const struct reginfo expected[] = {
 		{0x3034, 0x1a}, /* MIPI RAW10 */
+		{0x3800, 0x00}, {0x3801, 0x00}, /* crop X start 0 */
+		{0x3802, 0x00}, {0x3803, 0x08}, /* crop Y start 8 */
+		{0x3804, 0x0a}, {0x3805, 0x3b}, /* crop X end 2619 */
+		{0x3806, 0x07}, {0x3807, 0x9b}, /* crop Y end 1947 */
 		{0x3808, 0x05}, {0x3809, 0x00}, /* 1280 */
 		{0x380a, 0x02}, {0x380b, 0xd0}, /* 720 */
-		{0x4300, 0x00}, /* RAW, BGGR */
+		{0x3820, 0x46}, /* paired vertical flip baseline */
+		{0x3821, 0x01}, /* paired horizontal mirror baseline, binning kept */
+		{0x4300, 0x00}, /* RAW BGGR at the PL frame origin */
 		{0x5000, 0x06}, /* BPC/WPC, no sensor CIP */
 		{0x5001, 0x00}, /* no color ISP on RAW */
 		{0x501f, 0x03}, /* ISP RAW(DPC) */

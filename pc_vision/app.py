@@ -8,8 +8,12 @@ import time
 import cv2
 import numpy as np
 
-from config import DEFAULT, load_config
-from detector import Detector
+try:
+    from .config import DEFAULT, load_config
+    from .detector import Detector
+except ImportError:  # Keep direct `python pc_vision/app.py` execution working.
+    from config import DEFAULT, load_config
+    from detector import Detector
 
 
 def read_image(path):
@@ -101,6 +105,22 @@ def main(argv=None):
     source.add_argument("--image", type=Path)
     source.add_argument("--video", type=Path)
     source.add_argument("--camera", type=int)
+    source.add_argument("--photos", type=Path, help="Photo directory for offline game browsing")
+    source.add_argument("--replay", type=Path, help="scene-v1 JSONL recording for game mode")
+    source.add_argument("--serial", help="Explicit UART port for board scenes (e.g. COM5); never auto-detected")
+    parser.add_argument("--baud", type=int, default=115200, help="UART baud, 8N1; firmware default 115200")
+    parser.add_argument("--game", action="store_true", help="Independent virtual game using production C recognition/physics")
+    parser.add_argument("--native-game", action="store_true", help="Offline three-level C game; Python only transports files/mouse/native pixels")
+    parser.add_argument("--assets", type=Path, default=Path("output/build/game_app/offline_native_20261021/assets/game_assets.bin"))
+    parser.add_argument("--start-photo", default="077.png")
+    parser.add_argument("--game-config", type=Path)
+    parser.add_argument("--calibration", type=Path)
+    parser.add_argument("--calibration-out", type=Path)
+    parser.add_argument("--plane-size", type=float, nargs=2, metavar=("WIDTH_MM", "HEIGHT_MM"))
+    parser.add_argument("--scene-timeout", type=float)
+    parser.add_argument("--input-hz", type=float, default=8, help="Offline video processing cadence")
+    parser.add_argument("--replay-speed", type=float, default=1)
+    parser.add_argument("--cc", help="Host GCC path; default is gcc on PATH")
     parser.add_argument("--config", type=Path)
     parser.add_argument("--disable", nargs="+", choices=list(DEFAULT["stages"]), default=[])
     parser.add_argument("--headless", action="store_true")
@@ -110,17 +130,53 @@ def main(argv=None):
     parser.add_argument("--show-rejected", action="store_true", help="Draw rejected candidates for diagnosis")
     parser.add_argument("--max-frames", type=int, default=0, help="0 means until EOF/quit")
     parser.add_argument("--width", type=int, default=0, help="Processing width; 0 keeps original")
+    parser.add_argument("--types", nargs="+", choices=sorted(Detector.TYPES.values()),
+                        help="Only evaluate these classes; omitted means all classes")
     args = parser.parse_args(argv)
     if args.width < 0 or args.max_frames < 0:
         parser.error("width and max-frames must be nonnegative")
     if (args.save_frames or args.save_debug) and args.output is None:
         parser.error("--save-frames/--save-debug requires --output")
+    if args.native_game:
+        if args.camera is not None or args.serial or args.calibration or args.game_config or args.plane_size:
+            parser.error("Native offline preview accepts files only and the generated canonical uncalibrated configuration")
+        if args.width or args.config or args.disable or args.types or args.save_debug or args.show_rejected or args.scene_timeout is not None or args.calibration_out:
+            parser.error("Native mode uses unchanged C detection and canonical timing; detector/calibration override flags are unavailable")
+        if not np.isfinite(args.input_hz) or args.input_hz <= 0 or args.replay_speed != 1:
+            parser.error("Native input-hz must be positive and replay-speed must be 1 to preserve capture timestamps")
+        if __package__:
+            from .game_app import run_native_game
+        else:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+            from pc_vision.game_app import run_native_game
+        return run_native_game(args)
+    if args.game:
+        if args.baud <= 0:
+            parser.error("baud must be positive")
+        if args.camera is not None:
+            parser.error("Game mode uses --serial for board scenes, or --image/--photos/--video/--replay for files")
+        if args.width or args.config or args.disable or args.types or args.save_debug or args.show_rejected:
+            parser.error("Game mode uses unchanged C detection; detector debug flags belong to the original mode")
+        if not np.isfinite([args.input_hz, args.replay_speed]).all() or min(args.input_hz, args.replay_speed) <= 0:
+            parser.error("input-hz and replay-speed must be finite and positive")
+        if args.plane_size and (not np.isfinite(args.plane_size).all() or min(args.plane_size) <= 0):
+            parser.error("plane-size must be finite positive measured dimensions in mm")
+        if args.scene_timeout is not None and (not np.isfinite(args.scene_timeout) or args.scene_timeout <= 0):
+            parser.error("scene-timeout must be finite and positive")
+        if __package__:
+            from .game_app import run_game
+        else:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+            from pc_vision.game_app import run_game
+        return run_game(args)
+    if args.photos or args.replay or args.serial:
+        parser.error("--photos/--replay/--serial requires --game")
     config = load_config(args.config)
     if args.show_rejected:
         config["display"]["show_rejected"] = True
     for name in args.disable:
         config["stages"][name] = False
-    detector = Detector(config)
+    detector = Detector(config, enabled_types=args.types)
     capture = log = None
     count = 0
     try:

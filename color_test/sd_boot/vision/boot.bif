@@ -1,0 +1,6 @@
+the_ROM_image:
+{
+    [bootloader] ../../build/vision_ps_baremetal/vision_ps_platform/zynq_fsbl/fsbl.elf
+    ../../build/hw/system_wrapper.bit
+    ../../build/vision_ps_baremetal/output/vision_ps_baremetal.elf
+}

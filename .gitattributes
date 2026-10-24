@@ -1,0 +1,34 @@
+# Normalize text in the repository while keeping platform-specific scripts usable.
+* text=auto
+.gitattributes text eol=lf
+.gitignore     text eol=lf
+
+# FPGA, software, scripts, configuration, and documentation use LF in Git and WSL.
+*.v      text eol=lf
+*.sv     text eol=lf
+*.vhd    text eol=lf
+*.vhdl   text eol=lf
+*.xdc    text eol=lf
+*.tcl    text eol=lf
+*.xci    text eol=lf
+*.bd     text eol=lf
+*.xpr    text eol=lf
+*.bif    text eol=lf
+*.c      text eol=lf
+*.h      text eol=lf
+*.cpp    text eol=lf
+*.hpp    text eol=lf
+*.py     text eol=lf
+*.md     text eol=lf
+
+# Windows-native command scripts retain CRLF in the working tree.
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+
+# Documentation assets are binary.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.pdf    binary

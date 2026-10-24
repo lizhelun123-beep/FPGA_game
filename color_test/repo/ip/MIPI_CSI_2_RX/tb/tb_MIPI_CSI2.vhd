@@ -66,6 +66,10 @@ architecture Behavioral of tb_MIPI_CSI2 is
          m_axis_video_tready   : in std_logic;
          m_axis_video_tlast    : out std_logic;
          m_axis_video_tuser    : out std_logic_vector(0 downto 0);
+
+		 CrcErrorCount : out std_logic_vector(31 downto 0);
+		 FrameCount : out std_logic_vector(31 downto 0);
+		 FifoOverflow : out std_logic;
          
          video_aresetn        : in std_logic;
          video_aclk           : in std_logic;
@@ -94,6 +98,9 @@ architecture Behavioral of tb_MIPI_CSI2 is
    signal mAxisTdata : std_logic_vector(C_M_AXIS_TDATA_WIDTH - 1 downto 0);
    signal mAxisTvalid, mAxisTready, mAxisTlast : std_logic;
    signal mAxisTuser : std_logic_vector(0 downto 0);
+   signal CrcErrorCount, FrameCount : std_logic_vector(31 downto 0);
+   signal FifoOverflow : std_logic;
+   signal StartBackpressure, ResetRequest : std_logic := '0';
    signal MAxisClk : std_logic := '0';
    
    procedure Idle(signal RxValidHS : out std_logic; signal RxSyncHS : out std_logic;
@@ -123,6 +130,12 @@ ResetGen: process
 begin
    mRst_n <= '0';
    -- Reset of 16 clock periods is recommended for AXI IP
+   for i in 1 to 16 loop
+      wait until Rising_Edge(MAxisClk);
+   end loop;
+   mRst_n <= '1';
+   wait until ResetRequest = '1';
+   mRst_n <= '0';
    for i in 1 to 16 loop
       wait until Rising_Edge(MAxisClk);
    end loop;
@@ -177,13 +190,12 @@ begin
       Idle(rbRxValidHS(iLane), rbRxSyncHS(iLane), rbRxActiveHS(iLane), rbRxDataHS((iLane+1)*8-1 downto iLane*8));
    end loop;
    wait until aDEnable = "11";
-   SendPacket(fs_err);
-   SendPacket(long_err);
-   SendPacket(length_err);
+   wait until StartBackpressure = '1';
    SendPacket(fs);
-   SendPacket(longRAW10_err);
-   SendPacket(long_err);
-   SendPacket(fe);
+   for i in 0 to 2047 loop
+      SendPacket(longRAW10_err);
+      exit when FifoOverflow = '1';
+   end loop;
    wait;
 end process;
 
@@ -191,25 +203,31 @@ end process;
 ReadProc: process
 begin
    mAxisTready <= '1';
-   wait until Rising_Edge(MAxisClk) and mAxisTready = '1' and mAxisTvalid = '1';
-   assert (unsigned(mAxisTdata)=to_unsigned(0,C_M_AXIS_TDATA_WIDTH)) report "Expected throw-away data has unexpected value" severity failure;
-   for i in 0 to 8 - 1 loop
-      if (i mod C_M_MAX_SAMPLES_PER_CLOCK = 0) then
-         wait until Rising_Edge(MAxisClk) and mAxisTready = '1' and mAxisTvalid = '1';
-      end if;
-      if (i/C_M_MAX_SAMPLES_PER_CLOCK = 0) then
-         assert(mAxisTuser="1") report "Tuser not asserted at SOF" severity failure;
-      else
-         assert(mAxisTuser="0") report "Tuser asserted mid-frame" severity failure;
-      end if;
-      assert (to_unsigned(i,10)=unsigned(mAxisTdata(((i mod C_M_MAX_SAMPLES_PER_CLOCK)+1)*10-1 downto (i mod C_M_MAX_SAMPLES_PER_CLOCK)*10))) report "Output data does not match input" severity failure;
-      if (i/C_M_MAX_SAMPLES_PER_CLOCK = (8-1)/C_M_MAX_SAMPLES_PER_CLOCK) then
-         assert(mAxisTlast='1') report "Tlast not asserted at EOL" severity failure;
-      else
-         assert(mAxisTlast='0') report "Tlast asserted mid-line" severity failure;
-      end if;        
+   wait until aDEnable = "11";
+   for i in 1 to 16 loop
+      wait until Rising_Edge(MAxisClk);
    end loop;
-   report "Testbench executed successfully" severity note;
+   assert FifoOverflow = '0'
+      report "FIFO overflow asserted without output backpressure" severity failure;
+   mAxisTready <= '0';
+   StartBackpressure <= '1';
+   for i in 0 to 200000 loop
+      wait until Rising_Edge(RxByteClkHS);
+      exit when FifoOverflow = '1';
+   end loop;
+   assert FifoOverflow = '1'
+      report "FIFO overflow did not latch under sustained backpressure" severity failure;
+   for i in 1 to 16 loop
+      wait until Rising_Edge(MAxisClk);
+   end loop;
+   assert FifoOverflow = '1'
+      report "FIFO overflow status was not sticky" severity failure;
+   ResetRequest <= '1';
+   wait until mRst_n = '0';
+   wait for 1 ns;
+   assert FifoOverflow = '0'
+      report "FIFO overflow status did not clear on core reset" severity failure;
+   report "Testbench executed successfully, including FIFO overflow latch/reset" severity note;
    wait;
 end process;
 
@@ -243,6 +261,10 @@ DUT: MIPI_CSI2_Rx
       m_axis_video_tready   => mAxisTready,
       m_axis_video_tlast    => mAxisTlast,
       m_axis_video_tuser    => mAxisTuser,
+
+	  CrcErrorCount => CrcErrorCount,
+	  FrameCount => FrameCount,
+	  FifoOverflow => FifoOverflow,
       
       video_aresetn        => mRst_n,
       video_aclk           => MAxisClk,

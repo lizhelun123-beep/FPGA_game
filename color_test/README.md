@@ -7,7 +7,7 @@ Vivado/Vitis 2023.1 GUI、XSCT 终端、QSPI 固化、SD 卡裸机启动以及 P
 本工程基于官方 `22_an5641_mipi_hdmi` 示例迁移到 Vivado 2023.1，目标器件为
 `xc7z020clg400-2`。视频链路保持为：
 
-`OV5640 RAW10 -> D-PHY -> CSI-2 -> 有效 RGGB 去马赛克 -> Gamma -> 白平衡 -> 颜色高亮 -> VDMA -> DDR -> VDMA -> HDMI`
+`OV5640 RAW10 -> D-PHY -> CSI-2 -> 有效 BGGR（Xilinx phase 3）去马赛克 -> Gamma -> 白平衡 -> 颜色高亮 -> VDMA -> DDR -> VDMA -> HDMI`
 
 颜色高亮模块位于 `axis_subset_converter_0` 与采集端 `axi_vdma_1` 之间；subset converter
 采用 RGB 恒等映射，不交换 R/B，后级输入保持 `TDATA[23:16]=R`、`[15:8]=G`、`[7:0]=B`。
@@ -36,7 +36,8 @@ Vivado/Vitis 2023.1 GUI、XSCT 终端、QSPI 固化、SD 卡裸机启动以及 P
 
 主要输出：
 
-- bitstream：`color_test.runs/impl_1/system_wrapper.bit`
+- bitstream：`build/hw/system_wrapper.bit`
+- ILA probes：`build/hw/system_wrapper.ltx`
 - 硬件平台：`color_test.xsa`
 - 时序报告：`reports/post_impl_timing.rpt`
 - 资源报告：`reports/post_impl_utilization.rpt`
@@ -54,7 +55,7 @@ Vivado/Vitis 2023.1 GUI、XSCT 终端、QSPI 固化、SD 卡裸机启动以及 P
 
 1. 连接 OV5640 MIPI、HDMI 显示器和 JTAG，开发板使用 JTAG 启动模式。
 2. 在 Vivado Hardware Manager 中下载
-   `color_test.runs/impl_1/system_wrapper.bit`。
+   `build/hw/system_wrapper.bit`。
 3. 在 Vitis 2023.1 中以 `color_test.xsa` 创建或更新硬件平台，初始化 PS 后，将
    `software/mipi_hdmi/mipi_hdmi.elf` 下载到 Cortex-A9 #0 并运行。
 4. 依次放置纯红、纯蓝和橙色色卡，确认 HDMI 图像中的目标颜色被替换为固定高亮色，
@@ -87,7 +88,7 @@ PS、下载恢复版 ELF，并运行 Cortex-A9 #0：
 恢复版启动镜像由 `sd_boot/recovery/boot.bif` 描述，依次包含：
 
 1. `build/camera_recovery/camera_platform/zynq_fsbl/fsbl.elf`；
-2. `color_test.runs/impl_1/system_wrapper.bit`；
+2. `build/hw/system_wrapper.bit`；
 3. `build/camera_recovery/output/camera_recovery.elf`。
 
 完成硬件和软件构建后，在 `sd_boot/recovery` 目录运行：
@@ -102,11 +103,32 @@ PS、下载恢复版 ELF，并运行 Cortex-A9 #0：
 当前版本已完成 JTAG 下载后的 HDMI 颜色实板验收，红、蓝通道显示正确；SD 启动和多轮
 冷启动/Reset 稳定性仍需单独记录。
 
+裸机识别版启动镜像由 `sd_boot/vision/boot.bif` 描述，使用当前识别平台的 FSBL、匹配的
+`build/hw/system_wrapper.bit` 和 `vision_ps_baremetal.elf`。在仓库根目录运行：
+
+```powershell
+$env:VISION_JTAG_CHECK_ONLY = "1"
+& "$env:XILINX_VITIS\bin\xsct.bat" .\color_test\software\vision_ps_baremetal\tools\program_vision_ps_jtag.tcl
+Remove-Item Env:VISION_JTAG_CHECK_ONLY
+Push-Location .\color_test\sd_boot\vision
+& "$env:XILINX_VITIS\bin\bootgen.bat" -arch zynq -image boot.bif -o BOOT.bin -w on
+Pop-Location
+```
+
+检查通过后才可打包；将新生成的 `sd_boot/vision/BOOT.bin` 复制到 FAT32 启动分区根目录。
+该镜像直接启动 Cortex-A9 裸机六类识别和 Portal 光线程序，不需要 PYNQ/Linux。默认 HDMI
+overlay 只绘制光线路径和 `R2 RAY/DET/HIT` 小型状态栏，不绘制识别框、类别文字、置信度或中心十字。UART 启动标识为 `Vision firmware build=PORTAL_RAY_R2_20261013`。
+2026-10-13 离线生成镜像为 2,245,840 字节，SHA256 为
+`30B532FE6325312CDDE6438040228FB4580FCB5371E9ED2D5D42DFED6C543AE4`；尚未复制到 SD 或
+在板卡上运行。原有 `sd_boot/BOOT.bin` 和 `sd_boot/recovery/BOOT.bin` 分别保留旧应用和
+相机恢复用途，不应被识别版覆盖。
+
 ### CSI 调试核时钟
 
 `color_test.srcs/constrs_1/new/debug_hub.xdc` 将 `dbg_hub` 接至 PS FCLK0（100 MHz）。
 此前自动连接的时钟来自 MIPI 高速时钟；摄像头无输出时，Hardware Manager 无法检测到调试核。
 使用 ILA 时，必须下载同一次实现生成的 `system_wrapper.bit` 和 `system_wrapper.ltx`。
+正式副本位于 `build/hw/`；构建脚本只在实现成功且两个文件都存在时更新该目录。
 本次实现的 USER 扫描链为 1，可在 Hardware Manager 的 Tcl Console 中设置
 `set_property BSCAN_SWITCH_USER_MASK 1 [get_hw_devices xc7z020_1]` 后刷新设备。
 新的 bitstream 已通过完整 JTAG 下载脚本写入已连接板卡；时序报告中仍有 CSI IP
@@ -175,3 +197,28 @@ Vivado 2023.1 会把官方 MIPI CSI-2 IP 内部的 `axis_data_fifo` 从 1.1 升�
 Warning；它们未阻止 DRC、布局、布线或 bitstream 生成，且已约束的时序路径全部满足。
 目前时序报告中 CSI IP 内置 ILA 的跨时钟路径未满足约束；首次上板仍需观察
 MIPI 锁定、图像稳定性和 HDMI 输出，才能完成物理验证。
+## PS 裸机视觉识别临时版
+
+`software/vision_ps_baremetal` 提供一个不依赖 OpenCV/Linux 的 Cortex-A9 临时识别程序。
+它复用当前 OV5640、MIPI、VDMA 和 HDMI 链路，在 PS 中以 4×采样完成 HSV 分割、连通域
+和 marker 规则验证，通过 UART 输出六类目标的位置、包围框、角度和置信分数。
+
+快速验证与构建：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\color_test\software\vision_ps_baremetal\tools\test_host.ps1
+& "$env:XILINX_VITIS\bin\xsct.bat" .\color_test\software\vision_ps_baremetal\tools\build_vision_ps.tcl
+```
+
+板上已有匹配 PL 时，只下载临时 PS ELF：
+
+```powershell
+& "$env:XILINX_VITIS\bin\xsct.bat" .\color_test\software\vision_ps_baremetal\tools\run_vision_elf_jtag.tcl
+```
+
+完整流程、阈值位置、串口格式及限制见
+[`software/vision_ps_baremetal/README.md`](software/vision_ps_baremetal/README.md)。
+
+2026-09-30 v2 增加完整帧交接、HDMI 检测框/类型/置信度及逐帧调度。PL 已关闭固定颜色替换，
+首次升级需完整重建 BIT/XSA 和 PS ELF，不能只更新 ELF 来获得新的颜色通路。
+详细变更及验证记录见 [CHANGELOG](software/vision_ps_baremetal/CHANGELOG.md)。

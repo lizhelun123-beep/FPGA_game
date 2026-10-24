@@ -35,12 +35,12 @@ use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.STD_LOGIC_ARITH.ALL;
 use IEEE.STD_LOGIC_UNSIGNED.ALL;
 
-use work.DebugLib.all;
+use work.CsiDebugLib.all;
 
 entity MIPI_CSI2_Rx is
    Generic (
       kTargetDT : string := "RAW10";
-      kDebug : boolean := true; 
+      kDebug : boolean := false;
       --PPI
       kLaneCount : natural range 1 to 4 := 2; --[1,2,4]
       --Video Format
@@ -70,6 +70,7 @@ entity MIPI_CSI2_Rx is
       
 	  CrcErrorCount : out std_logic_vector(31 downto 0);
       FrameCount 	: out std_logic_vector(31 downto 0);
+	  FifoOverflow  : out std_logic;
 	  
       video_aresetn        : in std_logic;
       video_aclk           : in std_logic;
@@ -168,6 +169,7 @@ architecture Behavioral of MIPI_CSI2_Rx is
    signal rbLMAxisTkeep : std_logic_vector(kMaxLaneCount - 1 downto 0);
    signal rbLMAxisTvalid, rbLMAxisTlast : std_logic;
    signal rbLMErrOvf, rbLMErrSkew : std_logic;
+   signal rbLLPOverflow, rbOverflowSticky : std_logic;
    signal rbLLPAxisTready : std_logic;
    signal rbRst_n, rbEn : std_logic;
    signal vTready, vRst : std_logic;
@@ -181,7 +183,7 @@ architecture Behavioral of MIPI_CSI2_Rx is
 begin
 
 -- Synchronize video_aresetn into the RxByteClkHS domain
-SyncReset: entity work.ResetBridge
+SyncReset: entity work.CsiResetBridge
    generic map (
       kPolarity => '0')
    port map (
@@ -189,8 +191,22 @@ SyncReset: entity work.ResetBridge
       OutClk => RxByteClkHS,
       oRst => rbRst_n);
 
+-- The CSI source cannot be backpressured. Preserve either overflow indication
+-- until software explicitly resets the receive core.
+OverflowLatch: process(RxByteClkHS, rbRst_n)
+begin
+   if rbRst_n = '0' then
+      rbOverflowSticky <= '0';
+   elsif Rising_Edge(RxByteClkHS) then
+      if rbLMErrOvf = '1' or rbLLPOverflow = '1' then
+         rbOverflowSticky <= '1';
+      end if;
+   end if;
+end process;
+FifoOverflow <= rbOverflowSticky;
+
 -- Synchronize vEnable into the RxByteClkHS domain
-SyncAsyncEnable: entity work.SyncAsync
+SyncAsyncEnable: entity work.CsiSyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2, --use double FF synchronizer
@@ -246,7 +262,7 @@ aClkEnable <= aClkEnableInt;
 
 aDEnable <= aDEnableInt(kLaneCount-1 downto 0);
             
-SyncAsyncTready: entity work.SyncAsync
+SyncAsyncTready: entity work.CsiSyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2, --use double FF synchronizer
@@ -319,7 +335,7 @@ LLP_inst: LLP
       mAxisTuser => m_axis_video_tuser,
       
       aRst => vRst,            
-      sOverflow => open,
+      sOverflow => rbLLPOverflow,
 	  
 	  CrcErrorCount => CrcErrorCount,
 	  FrameCount => FrameCount,
@@ -402,14 +418,14 @@ PORT MAP (
 	probe38(0) => dbgLLP.crcError
 );
 
-SyncAsyncTrigOut: entity work.SyncAsync
+SyncAsyncTrigOut: entity work.CsiSyncAsync
    port map (
       aReset => '0',
       aIn => rbRxClkTrigOut,
       OutClk => video_aclk,
       oOut => vRxClkTrigOut);
       
-SyncAsyncTrigAck: entity work.SyncAsync
+SyncAsyncTrigAck: entity work.CsiSyncAsync
    port map (
       aReset => '0',
       aIn => vTrigInAck,
@@ -434,7 +450,7 @@ ILA_LaneGen: for i in kLaneCount-1 downto 0 generate
       probe6 => dbgLMLane(i).rbDataHS
    );
      
-   SyncAsyncTrigOut: entity work.SyncAsync
+   SyncAsyncTrigOut: entity work.CsiSyncAsync
       port map (
          aReset => '0',
          aIn => rbRxClkLaneTrigOut(i),

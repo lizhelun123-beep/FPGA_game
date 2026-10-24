@@ -1,15 +1,24 @@
 # Recreate a standalone build without relying on an old Eclipse workspace.
 set root [file normalize [file join [file dirname [info script]] ..]]
-set workspace [file join $root build camera_recovery]
-set xsa [file join $root color_test.xsa]
-setws $workspace
-if {![file exists [file join $workspace camera_platform platform.spr]]} {
-    platform create -name camera_platform -hw $xsa -proc ps7_cortexa9_0 -os standalone
-} else {
-    platform active camera_platform
-    # Never compile against a BSP/ps7_init copied from an older bitstream.
-    platform config -updatehw $xsa
+set build_root [file normalize [file join $root build]]
+set workspace [file normalize [file join $build_root camera_recovery]]
+set xsa [file normalize [file join $root color_test.xsa]]
+if {![file exists $xsa]} {
+    error "Current hardware handoff not found: $xsa"
 }
+if {[file dirname $workspace] ne $build_root ||
+    [file tail $workspace] ne "camera_recovery"} {
+    error "Refusing to recreate unexpected workspace path: $workspace"
+}
+# A recovery platform is generated data.  Recreate the canonical workspace so
+# no BSP, ps7_init, FSBL, embedded BIT, or driver metadata can survive from an
+# older XSA.
+if {[file exists $workspace]} {
+    file delete -force $workspace
+}
+file mkdir $workspace
+setws $workspace
+platform create -name camera_platform -hw $xsa -proc ps7_cortexa9_0 -os standalone
 domain active standalone_domain
 bsp config stdin ps7_uart_1
 bsp config stdout ps7_uart_1

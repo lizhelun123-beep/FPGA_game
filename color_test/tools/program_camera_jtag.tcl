@@ -5,7 +5,7 @@
 #   3. Start hw_server and connect the AX7Z020B JTAG cable.
 
 set project_dir [file normalize [file join [file dirname [info script]] ..]]
-set bit_file [file join $project_dir color_test.runs impl_1 system_wrapper.bit]
+set bit_file [file join $project_dir build hw system_wrapper.bit]
 set ps_init [file join $project_dir build camera_recovery camera_platform hw ps7_init.tcl]
 set elf_file [file join $project_dir build camera_recovery output camera_recovery.elf]
 set xsa_file [file join $project_dir color_test.xsa]
@@ -37,7 +37,9 @@ set bit_inputs [concat \
     [glob -nocomplain [file join $project_dir color_test.srcs constrs_1 new *]] \
     [glob -nocomplain [file join $project_dir rtl *]] \
     [glob -nocomplain [file join $project_dir repo ip AXI_BayerToRGB hdl *]] \
-    [glob -nocomplain [file join $project_dir repo ip AXI_GammaCorrection hdl *]]]
+    [glob -nocomplain [file join $project_dir repo ip AXI_GammaCorrection hdl *]] \
+    [glob -nocomplain [file join $project_dir repo ip MIPI_D_PHY_RX hdl *]] \
+    [glob -nocomplain [file join $project_dir repo ip MIPI_CSI_2_RX hdl *]]]
 set software_inputs [concat \
     [glob -nocomplain [file join $project_dir software mipi_hdmi mipi_hdmi src *.c]] \
     [glob -nocomplain [file join $project_dir software mipi_hdmi mipi_hdmi src *.h]] \

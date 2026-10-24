@@ -35,7 +35,7 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 USE IEEE.STD_LOGIC_UNSIGNED.ALL;
 
-use work.DebugLib;
+use work.CsiDebugLib;
 
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
@@ -76,7 +76,7 @@ entity LLP is
 	  CrcErrorCount : out std_logic_vector(31 downto 0);
       FrameCount : out std_logic_vector(31 downto 0);
       
-      dbgLLP : out DebugLib.DebugLLP_t
+      dbgLLP : out CsiDebugLib.DebugLLP_t
    );
 end LLP;
 
@@ -148,6 +148,7 @@ architecture Behavioral of LLP is
    signal mReg_Tlast, mReg_Tvalid, mReg_Tready : std_logic;
    signal mReg_Tkeep : std_logic_vector(kMaxLaneCount - 1 downto 0); 
    signal mReg_Tuser : std_logic_vector(0 downto 0);
+   signal mFrameStartPending : std_logic;
    
    signal mFmt_Tdata : std_logic_vector(4 * 10 - 1 downto 0); -- Four RAW10 pixels per beat supported
    signal mFmt_Tlast, mFmt_Tvalid, mFmt_Tready : std_logic;
@@ -166,7 +167,7 @@ architecture Behavioral of LLP is
    
    signal mCrcErrorCount :  std_logic_vector(31 downto 0);
    signal mFrameCount :  std_logic_vector(31 downto 0);
-   signal mFIFO_Tlast_Dly : std_logic ;
+   signal mCountPacket, mPacketEndPending : std_logic;
    signal crcError : std_logic ;
    
 begin
@@ -186,7 +187,7 @@ RAW10_DT: if (kTargetDT = "RAW10") generate
 end generate;
 
 -- Synchronize aRst into the MAxis domain
-SyncMReset: entity work.ResetBridge
+SyncMReset: entity work.CsiResetBridge
    generic map (
       kPolarity => '1')
    port map (
@@ -195,7 +196,7 @@ SyncMReset: entity work.ResetBridge
       oRst => mRst);
       
 -- Synchronize aRst into the SAxis domain
-SyncSReset: entity work.ResetBridge
+SyncSReset: entity work.CsiResetBridge
    generic map (
       kPolarity => '1')
    port map (
@@ -269,7 +270,11 @@ mFIFO_Tready <=   '1' when (mECC_En = '1' and mECC_Ready = '1') or -- pop header
                            (mKeep = '1' and mPkt_Tready = '1') -- pop data when accepted downstream
                   else '0';
 
-mECC_En <= mIsHeader and mFIFO_Tvalid;
+-- A header resets the payload CRC and can announce a new frame. Do not
+-- admit it while the previous registered payload or its CRC comparison is
+-- still pending, even though its wire-level CRC bytes have left the FIFO.
+mECC_En <= mIsHeader and mFIFO_Tvalid and not mReg_Tvalid and
+           not mPacketEndPending;
 -- Send header to processing while popping it from the FIFO
 -- in 3 cycles we will get a corrected one back
 ECCx: entity work.ECC 
@@ -292,16 +297,17 @@ mWC <= mECC_HeaderOut(23 downto 8);
 mVC <= mECC_HeaderOut(7 downto 6);
 mDT <= mECC_HeaderOut(5 downto 0);
 
--- Short packet processing, assert Tuser for Start-of-Frame
+-- A short FS packet queues a marker for the next accepted payload. It must
+-- never change the SOF field of a valid, stalled packet-register beat.
 FrameStart: process(MAxisClk)
 begin
    if Rising_Edge(MAxisClk) then
       if (mRst = '1') then
-         mReg_Tuser(0) <= '0';
+         mFrameStartPending <= '0';
       elsif (mECC_Valid = '1' and mDT = kDTFrameStart) then 
-         mReg_Tuser(0) <= '1';
-      elsif (mReg_Tvalid = '1' and mReg_Tready = '1') then --first word transmitted
-         mReg_Tuser(0) <= '0';
+         mFrameStartPending <= '1';
+      elsif (mPkt_Tvalid = '1' and mPkt_Tready = '1') then
+         mFrameStartPending <= '0';
       end if;
    end if;
 end process;
@@ -407,14 +413,17 @@ begin
    if Rising_Edge(MAxisClk) then     
       if (mRst = '1') then
          mReg_Tvalid <= '0';
+         mReg_Tuser <= "0";
       elsif (mReg_Tready = '1') then
          if (mPkt_Tvalid = '1') then
             mReg_Tlast <= mPkt_Tlast;
             mReg_Tdata <= mPkt_Tdata;
             mReg_Tkeep <= mPkt_Tkeep;
+            mReg_Tuser(0) <= mFrameStartPending;
             mReg_Tvalid <= '1';
          else
             mReg_Tvalid <= '0';
+            mReg_Tuser <= "0";
          end if;
       end if;
    end if;
@@ -448,43 +457,46 @@ begin
    end if;
 end process;
 
-TlastRegister: process (MAxisClk)
+-- The legacy FrameCount register counts completed target long packets, not
+-- CSI frames. A visible FIFO TLAST is neither a transfer nor a decoded header:
+-- in particular FS/FE have TLAST on their header while mDT still names the
+-- previous packet. Qualify the current packet after ECC, count its accepted
+-- body end exactly once. The CRC bytes can leave the FIFO while the last
+-- payload word remains blocked in PacketReg, so retain completion until
+-- that register drains. Header admission stays closed through comparison.
+PacketStatistics: process (MAxisClk)
 begin
-   if Rising_Edge(MAxisClk) then     
+   if Rising_Edge(MAxisClk) then
       if (mRst = '1') then
-         mFIFO_Tlast_Dly <= '0';
-      else
-		 mFIFO_Tlast_Dly <= mFIFO_Tlast ;
-      end if;
-   end if;
-end process;
-
-
-FrameCounter: process (MAxisClk)
-begin
-   if Rising_Edge(MAxisClk) then     
-      if (mRst = '1') then
+         mCountPacket <= '0';
+         mPacketEndPending <= '0';
          mFrameCount <= (others => '0');
-      elsif ((not std_match(mDT, "00----")) and mFIFO_Tlast_Dly = '0' and mFIFO_Tlast = '1') then
-		 mFrameCount <= mFrameCount + 1 ;
-      end if;
-   end if;
-end process;
-
-CrcErrorCounter: process (MAxisClk)
-begin
-   if Rising_Edge(MAxisClk) then     
-      if (mRst = '1') then
          mCrcErrorCount <= (others => '0');
-		 crcError <= '0' ;
-      elsif ((not std_match(mDT, "00----")) and mFIFO_Tlast_Dly = '0' and mFIFO_Tlast = '1') then
-	    if (mCRC_Sent /= mCRC_Out) then
-			mCrcErrorCount <= mCrcErrorCount + 1 ;
-			crcError <= '1' ;
-		else
-			mCrcErrorCount <= mCrcErrorCount;
-			crcError <= '0' ;
-		end if ;
+         crcError <= '0';
+      else
+         if mPacketEndPending = '1' and mReg_Tvalid = '0' then
+            mPacketEndPending <= '0';
+            mFrameCount <= mFrameCount + 1;
+            if mCRC_Sent /= mCRC_Out then
+               mCrcErrorCount <= mCrcErrorCount + 1;
+               crcError <= '1';
+            else
+               crcError <= '0';
+            end if;
+         end if;
+         if mECC_En = '1' and mECC_Ready = '1' then
+            mCountPacket <= '0';
+         elsif mECC_Valid = '1' then
+            if mDT = kTargetDTInt then mCountPacket <= '1';
+            else mCountPacket <= '0'; end if;
+         elsif mECC_Error = '1' then
+            mCountPacket <= '0';
+         end if;
+         if mFIFO_Tvalid = '1' and mFIFO_Tready = '1' and
+            mFIFO_Tlast = '1' and mIsHeader = '0' then
+            mPacketEndPending <= mCountPacket;
+            mCountPacket <= '0';
+         end if;
       end if;
    end if;
 end process;
@@ -508,7 +520,8 @@ CRC16x: entity work.CRC16
       bRst => mCRC_Rst
    );
 
---TODO do CRC compare for statistics
+-- CRC is reported after the accepted packet tail. Frame validity additionally
+-- requires geometry/epoch checks by the capture owner; these are packet stats.
 
 --CSI-2 RAW10 spec: The length of each packet must be a multiple of 4 pixels, 5 bytes
 mFmt_Tready <= mBuf_Tready;
@@ -530,10 +543,13 @@ begin
          mFmt_Tuser <= "0";
       elsif (mFmt_Tready = '1') then
          mFmt_Tvalid <= mReg_Tvalid;
-         if (mFmt_Tvalid = '1') then --first pixels transmitted
-            mFmt_Tuser <= "0";
-         elsif (mReg_Tuser = "1") then
+         -- A newly accepted SOF belongs to cnt=0 (which emits no pixels).
+         -- Preserve it for cnt=1 even if the preceding formatted beat is
+         -- being accepted on this same edge.
+         if (mReg_Tvalid = '1' and mReg_Tuser = "1") then
             mFmt_Tuser <= "1";
+         elsif (mFmt_Tvalid = '1') then
+            mFmt_Tuser <= "0";
          end if;
          if (mReg_Tvalid = '1') then
             case (cnt) is

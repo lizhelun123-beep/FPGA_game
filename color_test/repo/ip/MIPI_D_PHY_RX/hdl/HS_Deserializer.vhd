@@ -53,9 +53,13 @@ use UNISIM.VComponents.all;
 entity HS_Deserializer is
    Generic (
       kIs8b9b : boolean := false;
+      kBUFH_DDIRECT_M3 : boolean := false;
       kIDLY_TapWidth : natural := 5;
       kAddDelay_ps : integer := 0;
-      kNoLP : boolean := false
+      kNoLP : boolean := false;
+      -- Diagnostic-only opt-in: caller supplies ONE shared DivClk reset.
+      -- Default preserves the production async-assert/sync-release bridge.
+      kExternalByteReset : boolean := false
    );
    Port (
       dLP0_in : in std_logic_vector(7 downto 0);
@@ -71,8 +75,12 @@ entity HS_Deserializer is
       aLPOut : out std_logic_vector(1 downto 0);
            
       dDataOut8 : out std_logic_vector(7 downto 0); --if !kIs8b9b
+      -- Passive diagnostic observation; omitted by production instantiations.
+      dRawDataOut8 : out std_logic_vector(7 downto 0) := (others => '0');
       dDataOut9 : out std_logic_vector(8 downto 0); --if kIs8b9b
       dValid : out std_logic;
+      -- Registered byte-domain activity includes data not yet at the PPI.
+      dDrainBusy : out std_logic := '0';
 
       dSyncHard : out std_logic;
       dSyncSoft : out std_logic;
@@ -91,6 +99,11 @@ entity HS_Deserializer is
 end HS_Deserializer;
 
 architecture Behavioral of HS_Deserializer is
+
+   function input_mode return string is
+   begin
+      if kBUFH_DDIRECT_M3 then return "NONE"; else return "IFD"; end if;
+   end;
 
    constant kRefClkFreqInMHz : real := 200.0;
    constant kAddDelayTaps : natural := natural(ceil(real(kAddDelay_ps) * (kRefClkFreqInMHz*2.0*32.0) / 1_000_000.0));
@@ -147,6 +160,8 @@ constant kSyncSeq : std_logic_vector(7 downto 0) := "00011101";
 signal DataInDly, SerClkInv : std_logic;
 signal dDataIn_int : std_logic_vector(7 downto 0);
 signal dDataIn_reg : vector8(0 to 3); --data byte pipeline for sync detection and alignment
+signal dOutputValid : std_logic;
+signal dDrainBusy_int : std_logic;
 signal dValid_reg : vector1(0 to 3); --sync flag pipeline
 signal dSyncHard_int, dSyncSoft_int, dSyncErr_int : std_logic;
 signal dSettled, dSerdesRst, dLogicRst: std_logic;
@@ -157,12 +172,16 @@ signal wordToAlign : std_logic_vector(15 downto 0);
 type dLP_t is array (0 to 1) of std_logic_vector(7 downto 0);
 signal dLP : dLP_t;
 signal dLPBridge, dLPStop : std_logic;
+signal dLPStop_q : std_logic := '1';
 
 attribute DONT_TOUCH : string;
 attribute DONT_TOUCH of dLP: signal is "TRUE";
 begin
 
+dRawDataOut8 <= dDataIn_int;
+
 -- Delay element for phase alignment of serial data
+LegacyDelay: if not kBUFH_DDIRECT_M3 generate
 InputDelay: IDELAYE2
    generic map (
       CINVCTRL_SEL           => "FALSE",     -- TRUE, FALSE
@@ -186,6 +205,11 @@ InputDelay: IDELAYE2
       CNTVALUEIN             => "00000", --not used in VARIABLE mode
       CNTVALUEOUT            => cIDLY_CNT, -- current tap value
       CINVCTRL               => '0');
+end generate;
+DirectInput: if kBUFH_DDIRECT_M3 generate
+   DataInDly <= '0';
+   cIDLY_CNT <= (others => '0');
+end generate;
 assert (not kIs8b9b) report "8b9b encoding not supported yet" severity failure;
 
 
@@ -203,7 +227,7 @@ Deserializer: ISERDESE2
       DYN_CLK_INV_EN    => "FALSE",
       NUM_CE            => 1,
       OFB_USED          => "FALSE",
-      IOBDELAY          => "IFD",         -- Use input at DDLY to output the data on Q1-Q6
+      IOBDELAY          => input_mode,
       SERDES_MODE       => "MASTER",
       INIT_Q1           => '0',
       INIT_Q2           => '0',
@@ -231,7 +255,7 @@ Deserializer: ISERDESE2
       CLKB              => SerClkInv, -- Locally inverted clock
       CLKDIV            => DivClk, -- Slow clock driven by BUFR
       CLKDIVP           => '0', --Not used here
-      D                 => '0',                                
+      D                 => aHSIn,
       DDLY              => DataInDly, -- 1-bit Input signal from IODELAYE1.
       RST               => dSerdesRst, -- 1-bit Asynchronous reset only.
       SHIFTIN1          => '0',
@@ -244,29 +268,32 @@ Deserializer: ISERDESE2
       OCLKB             => '0',
       O                 => open); -- unregistered output of ISERDESE1
 
--- We need a reset bridge to use the asynchronous aRst signal to reset our
--- ISERDESE2 
-SerdesReset: entity work.ResetBridge
+UseInternalReset: if not kExternalByteReset generate
+SerdesReset: entity work.DphyResetBridge
    generic map (
       kPolarity => '1')
    port map (
       aRst => aRst,
       OutClk => DivClk,
       oRst => dSerdesRst);
--- We do not have a lot of time to bring aSettled into the DivClk domain
--- T_HS_SETTLE_max = 145ns + 10*UI
--- T_HS_SETTLE_min = 85ns + 6*UI
--- aSettled measures 85ns, and we synchronize it with only one flip-flop
--- dSettled should be used downstream in simple combinational logic only
-SyncAsyncSettled: entity work.SyncAsync
+end generate;
+UseExternalReset: if kExternalByteReset generate
+   -- No second synchronizer here. Caller guarantees reset pulse width,
+   -- synchronous release, stable SerClk/DivClk and downstream warm-up.
+   dSerdesRst <= aRst;
+end generate;
+-- Treat not-settled as an active-low reset: assert immediately even when
+-- DivClk stops, then release only after two DivClk edges. Reuse the standard
+-- reset bridge so the first stage cannot feed the receive logic directly.
+-- This adds one byte-clock period versus the former single-stage release;
+-- early SoT/first-byte reception still needs separate packet-level acceptance.
+SyncAsyncSettled: entity work.DphyResetBridge
    generic map (
-      kResetTo => '0',
-      kStages => 1) --see above
+      kPolarity => '0')
    port map (
-      aReset => not aSettled,
-      aIn => '1',
+      aRst => aSettled,
       OutClk => DivClk,
-      oOut => dSettled);
+      oRst => dSettled);
       
 -- LP de-serializer, 1:8 DDR, non-cascaded,
 -- Although LP signals are low-speed and not synchronous with the HS clock, we need to detect LP
@@ -353,7 +380,9 @@ begin
    elsif Rising_Edge(DivClk) then
       if (dSerdesRst_q = '0' and dSettled = '1') then
          dLogicRst <= '0';
-      elsif (dValid_reg(3) = '0') then
+      -- A short packet can enter LP-11 before its first output word. Wait
+      -- for the whole pending/output pipeline, including the CRC tail.
+      elsif (dDrainBusy_int = '0') then
          dLogicRst <= '1';
       end if;
       dSerdesRst_q := dSerdesRst;
@@ -382,24 +411,56 @@ begin
    if Rising_Edge(DivClk) then
       if dLogicRst = '1' then
          dValid_reg <= (others => '0');
+         dLPStop_q <= '1';
       else      
+         -- LP oversamples arrive one byte edge before the final aligned
+         -- word clears DataPipeline. Keep that word (including CRC) valid.
+         dLPStop_q <= dLPStop;
          for i in 2 to dValid_reg'high-1 loop
             dValid_reg(i+1) <= dValid_reg(i);
          end loop;
-         dValid_reg(2) <= (dSyncHard_int or dSyncSoft_int) and not dLPStop;
+         dValid_reg(2) <= (dSyncHard_int or dSyncSoft_int) and not dLPStop_q;
+      end if;
+   end if;
+end process;
+
+dValid <= dOutputValid;
+dDrainBusy <= dDrainBusy_int;
+
+-- LP-11 can reach the control FSM before a short packet reaches dValid.
+-- Keep that FSM out of reset until the byte-domain valid pipeline drains.
+-- Register the reduction before the existing two-flop control-domain CDC.
+process(DivClk)
+begin
+   if Rising_Edge(DivClk) then
+      if dLogicRst = '1' then
+         dDrainBusy_int <= '0';
+      else
+         -- Protect a short burst before SoT detection reaches this pipeline;
+         -- the control FSM can observe LP-11 before the first valid byte.
+         dDrainBusy_int <= not dLPStop_q
+                       or dValid_reg(2) or dValid_reg(3) or dOutputValid;
       end if;
    end if;
 end process;
 
 wordToAlign <= dDataIn_reg(1) & dDataIn_reg(0);
 
-process(DivClk)
+process(DivClk, dSerdesRst)
 variable nextMust : boolean;
 variable hard, soft : std_logic;
 variable alignment : natural range 0 to 7;
 
 begin
-   if Rising_Edge(DivClk) then
+   -- Clear externally visible synchronization state even if DivClk stopped.
+   -- dSerdesRst already has async assertion and byte-synchronous release.
+   if dSerdesRst = '1' then
+      dSyncHard_int <= '0';
+      dSyncSoft_int <= '0';
+      dAlignment_int <= 0;
+      dSyncErr_int <= '0';
+      nextMust := false;
+   elsif Rising_Edge(DivClk) then
       if (dLogicRst = '1') then
          dSyncHard_int <= '0';
          dSyncSoft_int <= '0';
@@ -435,14 +496,19 @@ dSyncSoft <= dSyncSoft_int;
 -- bitslip is out of question because it is slow and would lead to the loss of the first
 -- words in the transmission 
 ------------------------------------------------------------- 
-WordAlignment: process(DivClk)
+WordAlignment: process(DivClk, dSerdesRst)
 constant kPos : natural := 3;
 variable delay : natural range 0 to kPos := kPos;
 begin
-   if Rising_Edge(DivClk) then
+   -- Only PPI output registers get this existing synchronized reset. Data
+   -- pipelines and all capture/RAM controls retain their synchronous controls.
+   if dSerdesRst = '1' then
+      dDataOut8 <= (others => '0');
+      dOutputValid <= '0';
+   elsif Rising_Edge(DivClk) then
       if (dValid_reg(kPos) = '0' or dLogicRst = '1') then
          dDataOut8 <= (others => '0');
-         dValid <= '0';
+         dOutputValid <= '0';
       else
          case (dAlignment_int) is
          -- 76543210|76543210|76543210
@@ -471,7 +537,7 @@ begin
             when 7 => 
                dDataOut8 <= dDataIn_reg(kPos)(6 downto 0) & dDataIn_reg(kPos-1)(7 downto 7);           
          end case;
-         dValid <= dValid_reg(kPos);
+         dOutputValid <= dValid_reg(kPos);
       end if;
    end if;
 end process;

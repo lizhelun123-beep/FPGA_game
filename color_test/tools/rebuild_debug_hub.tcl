@@ -1,10 +1,13 @@
 set project_dir [file normalize [file join [file dirname [info script]] ..]]
 set debug_xdc [file join $project_dir color_test.srcs constrs_1 new debug_hub.xdc]
+set artifact_dir [file join $project_dir build hw]
+file mkdir $artifact_dir
 
 open_project [file join $project_dir color_test.xpr]
 if {[llength [get_files -quiet $debug_xdc]] == 0} {
     add_files -fileset constrs_1 $debug_xdc
 }
+set_property IS_ENABLED true [get_files $debug_xdc]
 set_property USED_IN_SYNTHESIS false [get_files $debug_xdc]
 
 reset_run impl_1
@@ -15,6 +18,17 @@ puts "BUILD_STATUS impl_1=$impl_status"
 if {![string match "write_bitstream Complete*" $impl_status]} {
     error "Implementation/bitstream failed: $impl_status"
 }
+
+set impl_dir [get_property DIRECTORY [get_runs impl_1]]
+set run_bit [file join $impl_dir system_wrapper.bit]
+set run_ltx [file join $impl_dir system_wrapper.ltx]
+foreach required [list $run_bit $run_ltx] {
+    if {![file exists $required]} {
+        error "Implementation completed but required artifact is missing: $required"
+    }
+}
+file copy -force $run_ltx [file join $artifact_dir system_wrapper.ltx]
+file copy -force $run_bit [file join $artifact_dir system_wrapper.bit]
 
 open_run impl_1
 puts "DEBUG_HUB_SCAN_CHAIN=[get_property C_USER_SCAN_CHAIN [get_debug_cores dbg_hub]]"

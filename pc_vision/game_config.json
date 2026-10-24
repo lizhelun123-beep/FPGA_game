@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "model_sizes": {
+    "SOURCE": [54, 40],
+    "MIRROR": [140, 12],
+    "WALL": [160, 30],
+    "TARGET": [64, 64],
+    "PORTAL_A": [164, 56],
+    "PORTAL_B": [164, 56]
+  },
+  "physics_scale": 100,
+  "position_alpha": 0.45,
+  "direction_alpha": 0.4,
+  "match_distance": 60,
+  "dropout_seconds": 0.25,
+  "timeout_seconds": 6.0,
+  "minimum_confidence": 0,
+  "board_game": {
+    "version": 1,
+    "coordinate_space": "uncalibrated_preview",
+    "width": 1279,
+    "height": 719,
+    "max_models": 6,
+    "render_max_ray_segments": 5,
+    "scene_max_age_ms": 250,
+    "duration_ms": 180000,
+    "pump_tick_ms": 10,
+    "render": {
+      "version": 1,
+      "scene_rect": [80, 192, 880, 420]
+    },
+    "star_threshold_ms": [60000, 120000],
+    "menu": {
+      "version": 1,
+      "width": 1280,
+      "height": 800,
+      "level_rects": [[80, 64, 320, 100], [480, 64, 320, 100], [880, 64, 320, 100]],
+      "start_rect": [480, 650, 320, 100]
+    },
+    "levels": [
+      {
+        "id": 1,
+        "reference": "sample_photo/075.png",
+        "objects": [
+          {"type": "SOURCE", "motion": "rotate_only", "center": [354.1875, 465.3125], "axis": [0.8347785464670302, -0.5505858501254755]},
+          {"type": "MIRROR", "motion": "fixed", "center": [619.5625, 293.5625], "axis": [0.01750082002013317, 0.999846848921685]},
+          {"type": "TARGET", "motion": "fixed", "center": [345, 104], "axis": [1, 0]}
+        ]
+      },
+      {
+        "id": 2,
+        "reference": "sample_photo/076.png",
+        "objects": [
+          {"type": "SOURCE", "motion": "fixed", "center": [998.3125, 323], "axis": [-0.995646995647318, 0.09320439935147647]},
+          {"type": "TARGET", "motion": "fixed", "center": [281, 125], "axis": [1, 0]},
+          {"type": "PORTAL_A", "motion": "free", "center": [859.5, 323.625], "axis": [0.03489967944791605, -0.9993908206374684]},
+          {"type": "PORTAL_B", "motion": "free", "center": [427.125, 121.75], "axis": [0.03489967944791642, -0.9993908206374685]}
+        ]
+      },
+      {
+        "id": 3,
+        "reference": "sample_photo/077.png",
+        "objects": [
+          {"type": "SOURCE", "motion": "fixed", "center": [972.875, 517.375], "axis": [-0.999621786994274, 0.027500599382094867]},
+          {"type": "TARGET", "motion": "fixed", "center": [312, 283], "axis": [1, 0]},
+          {"type": "PORTAL_A", "motion": "fixed", "center": [847.5, 507.5], "axis": [0, -1]},
+          {"type": "PORTAL_B", "motion": "fixed", "center": [431.75, 119.625], "axis": [0.017500820020133392, -0.9998468489216851]},
+          {"type": "MIRROR", "motion": "free", "center": [293.125, 105.125], "axis": [0.6819761448916702, -0.7313744169703338]}
+        ]
+      }
+    ]
+  }
+}

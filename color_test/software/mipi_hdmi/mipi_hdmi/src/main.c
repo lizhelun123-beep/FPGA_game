@@ -108,27 +108,115 @@ int PsGpioSetup() ;
 #define CAMERA_START_ATTEMPTS 3
 #define CAMERA_S2MM_STATUS (XPAR_AXIVDMA_1_BASEADDR + XAXIVDMA_RX_OFFSET + XAXIVDMA_SR_OFFSET)
 #define CAMERA_GAMMA_FACTOR_1_8 3U
+#define CAMERA_RX_CONTROL_OFFSET 0x00U
+#define CAMERA_RX_PACKET_OFFSET 0x04U
+#define CAMERA_RX_CRC_OFFSET 0x08U
+#define CAMERA_RX_VERSION_OFFSET 0x0cU
+#define CAMERA_RX_CONTROL_RESET 0x00000001U
+#define CAMERA_RX_CONTROL_ENABLE 0x00000002U
+#define CAMERA_CSI_FIFO_OVERFLOW 0x80000000U
+
+static void CameraReceiverStatus(const char *phase)
+{
+	UINTPTR csi = XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR;
+	UINTPTR dphy = XPAR_MIPI_D_PHY_RX_0_S_AXI_LITE_BASEADDR;
+	u32 csi_control = Xil_In32(csi + CAMERA_RX_CONTROL_OFFSET);
+	u32 dphy_control = Xil_In32(dphy + CAMERA_RX_CONTROL_OFFSET);
+
+	xil_printf("%s CSI_RX control=0x%08x enable=%u reset=%u fifo_overflow=%u version=0x%08x long_packets=%u crc_errors=%u\r\n",
+		phase, csi_control,
+		(csi_control & CAMERA_RX_CONTROL_ENABLE) != 0,
+		(csi_control & CAMERA_RX_CONTROL_RESET) != 0,
+		(csi_control & CAMERA_CSI_FIFO_OVERFLOW) != 0,
+		Xil_In32(csi + CAMERA_RX_VERSION_OFFSET),
+		Xil_In32(csi + CAMERA_RX_PACKET_OFFSET),
+		Xil_In32(csi + CAMERA_RX_CRC_OFFSET));
+	xil_printf("%s DPHY_RX control=0x%08x enable=%u reset=%u version=0x%08x HS/stop/lane_status=unavailable\r\n",
+		phase, dphy_control,
+		(dphy_control & CAMERA_RX_CONTROL_ENABLE) != 0,
+		(dphy_control & CAMERA_RX_CONTROL_RESET) != 0,
+		Xil_In32(dphy + CAMERA_RX_VERSION_OFFSET));
+}
+
+/* Both Digilent receiver IPs implement bit 0 reset and bit 1 enable in their
+ * real AXI-Lite control register.  Hold both cores reset while the sensor is
+ * reset/configured, then release D-PHY before the CSI packet decoder. */
+static int CameraReceiverHoldReset(void)
+{
+	UINTPTR csi = XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR;
+	UINTPTR dphy = XPAR_MIPI_D_PHY_RX_0_S_AXI_LITE_BASEADDR;
+	u32 asserted = CAMERA_RX_CONTROL_ENABLE | CAMERA_RX_CONTROL_RESET;
+
+	Xil_Out32(csi + CAMERA_RX_CONTROL_OFFSET, asserted);
+	Xil_Out32(dphy + CAMERA_RX_CONTROL_OFFSET, asserted);
+	usleep(1000);
+	if ((Xil_In32(csi + CAMERA_RX_CONTROL_OFFSET) & 0x3U) != asserted ||
+		(Xil_In32(dphy + CAMERA_RX_CONTROL_OFFSET) & 0x3U) != asserted) {
+		CameraReceiverStatus("RESET_ASSERT_FAILED");
+		return XST_FAILURE;
+	}
+	return XST_SUCCESS;
+}
+
+static int CameraReceiverEnable(void)
+{
+	UINTPTR csi = XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR;
+	UINTPTR dphy = XPAR_MIPI_D_PHY_RX_0_S_AXI_LITE_BASEADDR;
+
+	Xil_Out32(dphy + CAMERA_RX_CONTROL_OFFSET, CAMERA_RX_CONTROL_ENABLE);
+	usleep(1000); /* also exceeds the D-PHY IDELAYCTRL reset requirement */
+	Xil_Out32(csi + CAMERA_RX_CONTROL_OFFSET, CAMERA_RX_CONTROL_ENABLE);
+	usleep(1000);
+	if ((Xil_In32(csi + CAMERA_RX_CONTROL_OFFSET) & 0x3U) != CAMERA_RX_CONTROL_ENABLE ||
+		(Xil_In32(dphy + CAMERA_RX_CONTROL_OFFSET) & 0x3U) != CAMERA_RX_CONTROL_ENABLE) {
+		CameraReceiverStatus("RESET_RELEASE_FAILED");
+		return XST_FAILURE;
+	}
+	CameraReceiverStatus("RECEIVER_READY");
+	return XST_SUCCESS;
+}
 
 /* Count fresh packets and completed writes, not just a readable sensor ID. */
 static int CameraCheck(int verbose)
 {
-	u32 packets_before, packets_after, crc_before, crc_after, status;
+	u32 packets_before, packets_after, crc_before, crc_after, status, csi_control;
+	u32 packet_delta, crc_delta;
 	int healthy;
 	Xil_Out32(CAMERA_S2MM_STATUS, XAXIVDMA_IXR_FRMCNT_MASK);
-	packets_before = Xil_In32(XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR + 0x04);
-	crc_before = Xil_In32(XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR + 0x08);
+	packets_before = Xil_In32(XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR +
+		CAMERA_RX_PACKET_OFFSET);
+	crc_before = Xil_In32(XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR +
+		CAMERA_RX_CRC_OFFSET);
+	xil_printf("STAGE 4: WAITING FOR CSI PACKETS\r\n");
 	usleep(2000000);
-	packets_after = Xil_In32(XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR + 0x04);
-	crc_after = Xil_In32(XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR + 0x08);
+	packets_after = Xil_In32(XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR +
+		CAMERA_RX_PACKET_OFFSET);
+	crc_after = Xil_In32(XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR +
+		CAMERA_RX_CRC_OFFSET);
+	csi_control = Xil_In32(XPAR_MIPI_CSI_2_RX_0_S_AXI_LITE_BASEADDR +
+		CAMERA_RX_CONTROL_OFFSET);
 	status = Xil_In32(CAMERA_S2MM_STATUS);
-	healthy = packets_after != packets_before && crc_after == crc_before &&
+	packet_delta = packets_after - packets_before;
+	crc_delta = crc_after - crc_before;
+	healthy = packet_delta != 0 && crc_delta == 0 &&
 		(status & XAXIVDMA_IXR_FRMCNT_MASK) &&
-		!(status & (XAXIVDMA_SR_HALTED_MASK | XAXIVDMA_SR_ERR_ALL_MASK));
+		!(status & (XAXIVDMA_SR_HALTED_MASK | XAXIVDMA_SR_ERR_ALL_MASK)) &&
+		!(csi_control & CAMERA_CSI_FIFO_OVERFLOW);
 	if (verbose || !healthy) {
 		xil_printf("CSI long packets: %u -> %u, CRC errors: %u -> %u\r\n",
 			packets_before, packets_after, crc_before, crc_after);
-		xil_printf("Camera VDMA S2MM status: 0x%08x, frame completed: %u\r\n",
-			status, (status & XAXIVDMA_IXR_FRMCNT_MASK) != 0);
+		xil_printf("Camera VDMA S2MM status: 0x%08x, frame completed: %u, CSI overflow: %u\r\n",
+			status, (status & XAXIVDMA_IXR_FRMCNT_MASK) != 0,
+			(csi_control & CAMERA_CSI_FIFO_OVERFLOW) != 0);
+		CameraReceiverStatus("HEALTH");
+		if (packet_delta == 0)
+			xil_printf("HEALTH BOUNDARY: no CSI long packets; OV5640 MIPI TX / physical link / D-PHY HS / CSI decode remain indistinguishable because this D-PHY IP exposes no HS status register\r\n");
+		else if (crc_delta != 0)
+			xil_printf("HEALTH BOUNDARY: CSI packets arrived with CRC errors; inspect MIPI signal integrity and lane decode\r\n");
+		else if (!(status & XAXIVDMA_IXR_FRMCNT_MASK))
+			xil_printf("HEALTH BOUNDARY: CSI packets arrived but VDMA completed no frame; inspect AXI video framing and S2MM\r\n");
+		else if (csi_control & CAMERA_CSI_FIFO_OVERFLOW)
+			xil_printf("HEALTH BOUNDARY: CSI receive FIFO overflow; inspect AXI backpressure and downstream readiness\r\n");
 	}
 	return healthy ? XST_SUCCESS : XST_FAILURE;
 }
@@ -142,6 +230,10 @@ static int CameraStart(void)
 		if (vdma_write_reset(XPAR_AXIVDMA_1_DEVICE_ID) != XST_SUCCESS) {
 			xil_printf("Capture reset failed; check capture clocks/reset\r\n");
 			return XST_FAILURE;
+		}
+		if (CameraReceiverHoldReset() != XST_SUCCESS) {
+			xil_printf("Receiver reset assertion failed\r\n");
+			continue;
 		}
 		DemoPrintTest(dispCtrl.framePtr[dispCtrl.curFrame], dispCtrl.vMode.width,
 			dispCtrl.vMode.height, DEMO_STRIDE, 0);
@@ -159,6 +251,13 @@ static int CameraStart(void)
 			xil_printf("Camera configuration failed: %d\r\n", status);
 			continue;
 		}
+		xil_printf("STAGE 2: OV5640 STREAM CONFIG OK\r\n");
+		status = CameraReceiverEnable();
+		if (status != XST_SUCCESS) {
+			xil_printf("Receiver reset release/enable failed\r\n");
+			continue;
+		}
+		xil_printf("STAGE 3: D-PHY/CSI RX RESET OK\r\n");
 		status = vdma_write_init(XPAR_AXIVDMA_1_DEVICE_ID, HORSIZE, VERSIZE,
 			DEMO_STRIDE, (unsigned int)dispCtrl.framePtr[dispCtrl.curFrame]);
 		if (status != XST_SUCCESS) {
@@ -177,10 +276,20 @@ static int CameraStart(void)
 		xil_printf("Camera capture unhealthy; retrying initialization\r\n");
 	}
 	/* Leave a diagnostic pattern only after capture can no longer overwrite it. */
-	if (vdma_write_reset(XPAR_AXIVDMA_1_DEVICE_ID) == XST_SUCCESS) {
+	status = vdma_write_reset(XPAR_AXIVDMA_1_DEVICE_ID);
+	if (status == XST_SUCCESS) {
+		(void)CameraReceiverHoldReset();
 		XGpioPs_WritePin(&Gpio, 54, 0);
 		DemoPrintTest(dispCtrl.framePtr[dispCtrl.curFrame], dispCtrl.vMode.width,
 			dispCtrl.vMode.height, DEMO_STRIDE, 0);
+		xil_printf("FALLBACK COLOR BARS buffer=0x%08x active=%ux%u stride=%u MM2S_status=0x%08x\r\n",
+			(u32)dispCtrl.framePtr[dispCtrl.curFrame], dispCtrl.vMode.width,
+			dispCtrl.vMode.height, DEMO_STRIDE,
+			Xil_In32(XPAR_AXIVDMA_0_BASEADDR + XAXIVDMA_TX_OFFSET +
+				XAXIVDMA_SR_OFFSET));
+	} else {
+		xil_printf("FALLBACK COLOR BARS NOT DRAWN: capture VDMA reset failed: %d\r\n",
+			status);
 	}
 	xil_printf("Camera failed after %d attempts; inspect MIPI clocks/reset and cable\r\n",
 		CAMERA_START_ATTEMPTS);

@@ -44,7 +44,7 @@ entity MIPI_CSI_2_RX_S_AXI_LITE is
 		-- Width of S_AXI data bus
 		C_S_AXI_DATA_WIDTH	: integer	:= 32;
 		-- Width of S_AXI address bus
-		C_S_AXI_ADDR_WIDTH	: integer	:= 4
+		C_S_AXI_ADDR_WIDTH	: integer	:= 5
 	);
 	port (
 		-- Users to add ports here
@@ -53,6 +53,10 @@ entity MIPI_CSI_2_RX_S_AXI_LITE is
 		
 		CrcErrorCount :  in std_logic_vector(31 downto 0);
 		FrameCount :  in std_logic_vector(31 downto 0);
+        StatusSequence : in std_logic_vector(31 downto 0);
+        StatusRequest : out std_logic;
+        StatusBusy : in std_logic;
+		FifoOverflow : in std_logic;
 		-- User ports ends
 		-- Do not modify the ports beyond this line
 
@@ -122,6 +126,7 @@ end MIPI_CSI_2_RX_S_AXI_LITE;
 architecture arch_imp of MIPI_CSI_2_RX_S_AXI_LITE is
    constant kCTRL_EN : natural := 1;
    constant kCTRL_RST : natural := 0;
+   constant kCTRL_FIFO_OVERFLOW : natural := 31;
    constant kVersion : std_logic_vector(31 downto 0) := std_logic_vector(to_unsigned(kVersionMajor,16)) & std_logic_vector(to_unsigned(kVersionMinor,16));
 	-- AXI4LITE signals
 	signal axi_awaddr	: std_logic_vector(C_S_AXI_ADDR_WIDTH-1 downto 0);
@@ -141,7 +146,7 @@ architecture arch_imp of MIPI_CSI_2_RX_S_AXI_LITE is
 	-- ADDR_LSB = 2 for 32 bits (n downto 2)
 	-- ADDR_LSB = 3 for 64 bits (n downto 3)
 	constant ADDR_LSB  : integer := (C_S_AXI_DATA_WIDTH/32)+ 1;
-	constant OPT_MEM_ADDR_BITS : integer := 1;
+	constant OPT_MEM_ADDR_BITS : integer := 2;
 	------------------------------------------------
 	---- Signals for user logic register space example
 	--------------------------------------------------
@@ -242,13 +247,14 @@ begin
 	variable loc_addr :std_logic_vector(OPT_MEM_ADDR_BITS downto 0); 
 	begin
 	  if rising_edge(S_AXI_ACLK) then 
+        StatusRequest <= '0';
 	    if S_AXI_ARESETN = '0' then
 	      control_reg <= (kCTRL_RST => '0', kCTRL_EN => '1', others => '0');
 	    else
 	      loc_addr := axi_awaddr(ADDR_LSB + OPT_MEM_ADDR_BITS downto ADDR_LSB);
 	      if (slv_reg_wren = '1') then
 	        case loc_addr is
-	          when b"00" =>
+	          when b"000" =>
 	            for byte_index in 0 to (C_S_AXI_DATA_WIDTH/8-1) loop
 	              if ( S_AXI_WSTRB(byte_index) = '1' ) then
 	                -- Respective byte enables are asserted as per write strobes                   
@@ -256,6 +262,10 @@ begin
 	                control_reg(byte_index*8+7 downto byte_index*8) <= S_AXI_WDATA(byte_index*8+7 downto byte_index*8);
 	              end if;
 	            end loop;
+              when b"100" =>
+                if S_AXI_WSTRB(0) = '1' and S_AXI_WDATA(0) = '1' then
+                  StatusRequest <= '1';
+                end if;
 	          when others =>
 	            control_reg <= control_reg;
 	        end case;
@@ -345,20 +355,26 @@ begin
 	-- and the slave is ready to accept the read address.
 	slv_reg_rden <= axi_arready and S_AXI_ARVALID and (not axi_rvalid) ;
 
-	process (control_reg, axi_araddr, S_AXI_ARESETN, slv_reg_rden)
+	process (control_reg, axi_araddr, S_AXI_ARESETN, slv_reg_rden, FifoOverflow,
+		FrameCount, CrcErrorCount, StatusSequence, StatusBusy)
 	variable loc_addr :std_logic_vector(OPT_MEM_ADDR_BITS downto 0);
 	begin
 	    -- Address decoding for reading registers
 	    loc_addr := axi_araddr(ADDR_LSB + OPT_MEM_ADDR_BITS downto ADDR_LSB);
 	    case loc_addr is
-	      when b"00" =>
+	      when b"000" =>
 	        reg_data_out <= control_reg;
-		  when b"01" =>
+	        reg_data_out(kCTRL_FIFO_OVERFLOW) <= FifoOverflow;
+		  when b"001" =>
 	        reg_data_out <= FrameCount;
-		  when b"10" =>
+		  when b"010" =>
 	        reg_data_out <= CrcErrorCount;
-	      when b"11" =>
+	      when b"011" =>
 	        reg_data_out <= kVersion;
+          when b"100" =>
+            reg_data_out <= StatusSequence;
+          when b"101" =>
+            reg_data_out <= (0 => StatusBusy, others => '0');
 	      when others =>
 	        reg_data_out  <= (others => '0');
 	    end case;

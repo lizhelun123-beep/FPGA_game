@@ -1,0 +1,108 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2023.1 (win64) Build 3865809 Sun May  7 15:05:29 MDT 2023
+| Date         : Sun Oct 18 19:05:52 2026
+| Host         : iband running 64-bit major release  (build 9200)
+| Command      : report_utilization -hierarchical -file D:/Workspace/AMD_camera/FPGA-main/FPGA-main/build/dphy_sampling/vendor_reference/vendor_utilization.rpt
+| Design       : bd_b733_phy_0
+| Device       : xc7z020clg400-2
+| Speed File   : -2
+| Design State : Synthesized
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++-----------------------------------------------------------------+--------------------------------------------------+------------+------------+---------+------+------+--------+--------+------------+
+|                             Instance                            |                      Module                      | Total LUTs | Logic LUTs | LUTRAMs | SRLs |  FFs | RAMB36 | RAMB18 | DSP Blocks |
++-----------------------------------------------------------------+--------------------------------------------------+------------+------------+---------+------+------+--------+--------+------------+
+| bd_b733_phy_0                                                   |                                            (top) |       1694 |       1681 |       0 |   13 | 3288 |      0 |      0 |          0 |
+|   (bd_b733_phy_0)                                               |                                            (top) |          0 |          0 |       0 |    0 |    0 |      0 |      0 |          0 |
+|   inst                                                          |                               bd_b733_phy_0_core |       1694 |       1681 |       0 |   13 | 3288 |      0 |      0 |          0 |
+|     inst                                                        |                                 bd_b733_phy_0_c1 |       1694 |       1681 |       0 |   13 | 3288 |      0 |      0 |          0 |
+|       bd_b733_phy_0_rx_support_i                                |                            bd_b733_phy_0_support |       1694 |       1681 |       0 |   13 | 3288 |      0 |      0 |          0 |
+|         (bd_b733_phy_0_rx_support_i)                            |                            bd_b733_phy_0_support |          0 |          0 |       0 |    0 |    0 |      0 |      0 |          0 |
+|         slave_rx.bd_b733_phy_0_rx_ioi_i                         |                  mipi_dphy_v4_3_6_rx_ioi_7series |          6 |          6 |       0 |    0 |    5 |      0 |      0 |          0 |
+|         slave_rx.cl_enable_sync_support_i                       |                    mipi_dphy_v4_3_6_rx_sync_cell |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|         slave_rx.dphy_rx_fab_top                                |                      mipi_dphy_v4_3_6_rx_fab_top |       1646 |       1633 |       0 |   13 | 3264 |      0 |      0 |          0 |
+|           (slave_rx.dphy_rx_fab_top)                            |                      mipi_dphy_v4_3_6_rx_fab_top |          2 |          2 |       0 |    0 |   18 |      0 |      0 |          0 |
+|           cl_enable_sync_fab_top_i                              |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized1 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|           clk_active_r_sync                                     |  mipi_dphy_v4_3_6_rx_sync_cell__parameterized1_0 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|           en_rx_rst_sync_initval.u_sys_rst_byteclk_sync_i       |     mipi_dphy_v4_3_6_rx_rst_sync__parameterized0 |          0 |          0 |       0 |    0 |    3 |      0 |      0 |          0 |
+|           gen_csi_rx_clk_lane.dphy_rx_clk_lane                  |                 mipi_dphy_v4_3_6_csi_rx_clk_lane |        121 |        108 |       0 |   13 |   95 |      0 |      0 |          0 |
+|             (gen_csi_rx_clk_lane.dphy_rx_clk_lane)              |                 mipi_dphy_v4_3_6_csi_rx_clk_lane |         54 |         41 |       0 |   13 |   83 |      0 |      0 |          0 |
+|             lp_state_sync0_i                                    | mipi_dphy_v4_3_6_rx_sync_cell__parameterized2_37 |         36 |         36 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             lp_state_sync1_i                                    | mipi_dphy_v4_3_6_rx_sync_cell__parameterized2_38 |         31 |         31 |       0 |    0 |    6 |      0 |      0 |          0 |
+|           gen_regs.gen_regs_wo_debug_wo_timeout.rx_reg_inst     |                     mipi_dphy_v4_3_6_rx_dphy_reg |        808 |        808 |       0 |    0 | 2821 |      0 |      0 |          0 |
+|             (gen_regs.gen_regs_wo_debug_wo_timeout.rx_reg_inst) |                     mipi_dphy_v4_3_6_rx_dphy_reg |        209 |        209 |       0 |    0 |  325 |      0 |      0 |          0 |
+|             cl_errcontrol_sync                                  | mipi_dphy_v4_3_6_rx_sync_cell__parameterized0_16 |         20 |         20 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             control_sync                                        |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized7 |         15 |         15 |       0 |    0 |   12 |      0 |      0 |          0 |
+|             d_termen_reg_sync                                   |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized9 |         13 |         13 |       0 |    0 |  192 |      0 |      0 |          0 |
+|             dl0_pkt_cnt_sync                                    |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized3 |         26 |         26 |       0 |    0 |   96 |      0 |      0 |          0 |
+|             dl1_pkt_cnt_sync                                    | mipi_dphy_v4_3_6_rx_sync_cell__parameterized3_17 |         30 |         30 |       0 |    0 |   96 |      0 |      0 |          0 |
+|             dl2_pkt_cnt_sync                                    | mipi_dphy_v4_3_6_rx_sync_cell__parameterized3_18 |         13 |         13 |       0 |    0 |   96 |      0 |      0 |          0 |
+|             dl3_pkt_cnt_sync                                    | mipi_dphy_v4_3_6_rx_sync_cell__parameterized3_19 |         17 |         17 |       0 |    0 |   96 |      0 |      0 |          0 |
+|             dl4_pkt_cnt_sync                                    | mipi_dphy_v4_3_6_rx_sync_cell__parameterized3_20 |         49 |         49 |       0 |    0 |   96 |      0 |      0 |          0 |
+|             dl5_pkt_cnt_sync                                    | mipi_dphy_v4_3_6_rx_sync_cell__parameterized3_21 |         13 |         13 |       0 |    0 |   96 |      0 |      0 |          0 |
+|             dl6_pkt_cnt_sync                                    | mipi_dphy_v4_3_6_rx_sync_cell__parameterized3_22 |         13 |         13 |       0 |    0 |   96 |      0 |      0 |          0 |
+|             dl7_pkt_cnt_sync                                    | mipi_dphy_v4_3_6_rx_sync_cell__parameterized3_23 |         23 |         23 |       0 |    0 |   96 |      0 |      0 |          0 |
+|             esc_abort_sync                                      |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized4 |         13 |         13 |       0 |    0 |   48 |      0 |      0 |          0 |
+|             hs_abort_sync                                       | mipi_dphy_v4_3_6_rx_sync_cell__parameterized4_24 |         13 |         13 |       0 |    0 |   48 |      0 |      0 |          0 |
+|             hs_rx_timeout_div4clk_sync                          | mipi_dphy_v4_3_6_rx_sync_cell__parameterized9_25 |         13 |         13 |       0 |    0 |  192 |      0 |      0 |          0 |
+|             hs_settle_reg_ln1_sync                              |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized5 |         22 |         22 |       0 |    0 |   54 |      0 |      0 |          0 |
+|             hs_settle_reg_ln2_sync                              | mipi_dphy_v4_3_6_rx_sync_cell__parameterized5_26 |         22 |         22 |       0 |    0 |   54 |      0 |      0 |          0 |
+|             hs_settle_reg_ln3_sync                              | mipi_dphy_v4_3_6_rx_sync_cell__parameterized5_27 |         22 |         22 |       0 |    0 |   54 |      0 |      0 |          0 |
+|             hs_settle_reg_ln4_sync                              | mipi_dphy_v4_3_6_rx_sync_cell__parameterized5_28 |         22 |         22 |       0 |    0 |   54 |      0 |      0 |          0 |
+|             hs_settle_reg_ln5_sync                              | mipi_dphy_v4_3_6_rx_sync_cell__parameterized5_29 |         22 |         22 |       0 |    0 |   54 |      0 |      0 |          0 |
+|             hs_settle_reg_ln6_sync                              | mipi_dphy_v4_3_6_rx_sync_cell__parameterized5_30 |         22 |         22 |       0 |    0 |   54 |      0 |      0 |          0 |
+|             hs_settle_reg_ln7_sync                              | mipi_dphy_v4_3_6_rx_sync_cell__parameterized5_31 |         22 |         22 |       0 |    0 |   54 |      0 |      0 |          0 |
+|             hs_settle_reg_sync                                  | mipi_dphy_v4_3_6_rx_sync_cell__parameterized5_32 |         22 |         22 |       0 |    0 |   54 |      0 |      0 |          0 |
+|             idelay_value_sync                                   |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized8 |         13 |         13 |       0 |    0 |  384 |      0 |      0 |          0 |
+|             init_done_sync                                      | mipi_dphy_v4_3_6_rx_sync_cell__parameterized0_33 |         25 |         25 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             init_reg_sync                                       | mipi_dphy_v4_3_6_rx_sync_cell__parameterized9_34 |         45 |         45 |       0 |    0 |  192 |      0 |      0 |          0 |
+|             mode_sync                                           |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized6 |         28 |         28 |       0 |    0 |  108 |      0 |      0 |          0 |
+|             stopstate_sync                                      | mipi_dphy_v4_3_6_rx_sync_cell__parameterized5_35 |         21 |         21 |       0 |    0 |   54 |      0 |      0 |          0 |
+|             ulps_sync                                           | mipi_dphy_v4_3_6_rx_sync_cell__parameterized5_36 |         20 |         20 |       0 |    0 |   54 |      0 |      0 |          0 |
+|           gen_rx_data_lane[0].rx_data_lane_inst                 |                    mipi_dphy_v4_3_6_rx_data_lane |        297 |        297 |       0 |    0 |  143 |      0 |      0 |          0 |
+|             (gen_rx_data_lane[0].rx_data_lane_inst)             |                    mipi_dphy_v4_3_6_rx_data_lane |          8 |          8 |       0 |    0 |   30 |      0 |      0 |          0 |
+|             gen_calib_result.cal_done_sync_i                    |  mipi_dphy_v4_3_6_rx_sync_cell__parameterized1_8 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             gen_calib_result.u_tap_comp_rst_byteclk_sync_i      |   mipi_dphy_v4_3_6_rx_rst_sync__parameterized1_9 |          0 |          0 |       0 |    0 |    3 |      0 |      0 |          0 |
+|             gen_csi_rx_data_lane_sm.csi_rx_data_lane_sm         |          mipi_dphy_v4_3_6_csi_rx_data_lane_sm_10 |        135 |        135 |       0 |    0 |   52 |      0 |      0 |          0 |
+|               (gen_csi_rx_data_lane_sm.csi_rx_data_lane_sm)     |          mipi_dphy_v4_3_6_csi_rx_data_lane_sm_10 |         63 |         63 |       0 |    0 |   40 |      0 |      0 |          0 |
+|               lp_state_sync0_i                                  | mipi_dphy_v4_3_6_rx_sync_cell__parameterized2_14 |         45 |         45 |       0 |    0 |    6 |      0 |      0 |          0 |
+|               lp_state_sync1_i                                  | mipi_dphy_v4_3_6_rx_sync_cell__parameterized2_15 |         27 |         27 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             gen_hs_high_rates_spec_v1_1.rx_sot_det_align_i      |             mipi_dphy_v4_3_6_rx_sot_det_align_11 |        114 |        114 |       0 |    0 |   46 |      0 |      0 |          0 |
+|               (gen_hs_high_rates_spec_v1_1.rx_sot_det_align_i)  |             mipi_dphy_v4_3_6_rx_sot_det_align_11 |         95 |         95 |       0 |    0 |   40 |      0 |      0 |          0 |
+|               en_hs_lpn_sync_i                                  | mipi_dphy_v4_3_6_rx_sync_cell__parameterized2_13 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             rxactivehs_sync_i                                   | mipi_dphy_v4_3_6_rx_sync_cell__parameterized1_12 |         21 |         21 |       0 |    0 |    6 |      0 |      0 |          0 |
+|           gen_rx_data_lane[1].rx_data_lane_inst                 |                  mipi_dphy_v4_3_6_rx_data_lane_1 |        295 |        295 |       0 |    0 |  143 |      0 |      0 |          0 |
+|             (gen_rx_data_lane[1].rx_data_lane_inst)             |                  mipi_dphy_v4_3_6_rx_data_lane_1 |          8 |          8 |       0 |    0 |   30 |      0 |      0 |          0 |
+|             gen_calib_result.cal_done_sync_i                    |  mipi_dphy_v4_3_6_rx_sync_cell__parameterized1_4 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             gen_calib_result.u_tap_comp_rst_byteclk_sync_i      |     mipi_dphy_v4_3_6_rx_rst_sync__parameterized1 |          0 |          0 |       0 |    0 |    3 |      0 |      0 |          0 |
+|             gen_csi_rx_data_lane_sm.csi_rx_data_lane_sm         |             mipi_dphy_v4_3_6_csi_rx_data_lane_sm |        135 |        135 |       0 |    0 |   52 |      0 |      0 |          0 |
+|               (gen_csi_rx_data_lane_sm.csi_rx_data_lane_sm)     |             mipi_dphy_v4_3_6_csi_rx_data_lane_sm |         63 |         63 |       0 |    0 |   40 |      0 |      0 |          0 |
+|               lp_state_sync0_i                                  |  mipi_dphy_v4_3_6_rx_sync_cell__parameterized2_6 |         45 |         45 |       0 |    0 |    6 |      0 |      0 |          0 |
+|               lp_state_sync1_i                                  |  mipi_dphy_v4_3_6_rx_sync_cell__parameterized2_7 |         27 |         27 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             gen_hs_high_rates_spec_v1_1.rx_sot_det_align_i      |                mipi_dphy_v4_3_6_rx_sot_det_align |        112 |        112 |       0 |    0 |   46 |      0 |      0 |          0 |
+|               (gen_hs_high_rates_spec_v1_1.rx_sot_det_align_i)  |                mipi_dphy_v4_3_6_rx_sot_det_align |         93 |         93 |       0 |    0 |   40 |      0 |      0 |          0 |
+|               en_hs_lpn_sync_i                                  |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized2 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             rxactivehs_sync_i                                   |  mipi_dphy_v4_3_6_rx_sync_cell__parameterized1_5 |         21 |         21 |       0 |    0 |    6 |      0 |      0 |          0 |
+|           init_done_div4clk_sync_i                              |   mipi_dphy_v4_3_6_rx_sync_cell__parameterized10 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|           maxfrm_wait_done_sync_i                               |    mipi_dphy_v4_3_6_rx_sync_cell__parameterized0 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|           u_rx_support_rst_logic                                |            mipi_dphy_v4_3_6_rx_support_rst_logic |         47 |         47 |       0 |    0 |   17 |      0 |      0 |          0 |
+|             (u_rx_support_rst_logic)                            |            mipi_dphy_v4_3_6_rx_support_rst_logic |          2 |          2 |       0 |    0 |    5 |      0 |      0 |          0 |
+|             core_rst_sync_i                                     |  mipi_dphy_v4_3_6_rx_sync_cell__parameterized0_2 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
+|             phy_rdy_sync_i                                      |  mipi_dphy_v4_3_6_rx_sync_cell__parameterized0_3 |         26 |         26 |       0 |    0 |    6 |      0 |      0 |          0 |
+|         slave_rx.u_core_rst_coreclk_sync_rx_i                   |                     mipi_dphy_v4_3_6_rx_rst_sync |          0 |          0 |       0 |    0 |    3 |      0 |      0 |          0 |
+|         slave_rx.u_rx_rst_logic_7series                         |            mipi_dphy_v4_3_6_rx_rst_logic_7series |         23 |         23 |       0 |    0 |   10 |      0 |      0 |          0 |
+|           (slave_rx.u_rx_rst_logic_7series)                     |            mipi_dphy_v4_3_6_rx_rst_logic_7series |          4 |          4 |       0 |    0 |    4 |      0 |      0 |          0 |
+|           core_rst_sync_i                                       | mipi_dphy_v4_3_6_rx_sync_cell__parameterized0_39 |         19 |         19 |       0 |    0 |    6 |      0 |      0 |          0 |
++-----------------------------------------------------------------+--------------------------------------------------+------------+------------+---------+------+------+--------+--------+------------+
+
+

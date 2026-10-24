@@ -15,12 +15,22 @@ desktop.ini
 .vscode/
 .idea/
 
+# Python generated data
+__pycache__/
+*.py[cod]
+
 # Claude local config
 .claude/settings.local.json
 
 # Vivado and Vitis generated data
 .Xil/
 xsim.dir/
+*.cache/
+*.gen/
+*.runs/
+*.sim/
+*.hw/
+*.ip_user_files/
 *.jou
 *.log
 *.pb

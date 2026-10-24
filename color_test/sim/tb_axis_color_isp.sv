@@ -18,11 +18,7 @@ module tb_axis_color_isp;
     wire        m_axis_tlast;
 
     axis_color_highlight #(
-        // Disable highlighting so this bench observes only ISP colour gain.
-        .BLUE_MIN_B(256),
-        .RED_MIN_R(256),
-        .ORANGE_MIN_R(256),
-        .ORANGE_MIN_G(256)
+        .ENABLE_HIGHLIGHT(0)
     ) dut (
         .aclk(aclk),
         .s_axis_tdata(s_axis_tdata),
@@ -60,9 +56,11 @@ module tb_axis_color_isp;
     endtask
 
     initial begin
-        check(24'h282828, 24'h3c283c); // R/B 1.5x, G 1.0x
-        check(24'h010101, 24'h010101); // integer shift-add result
-        check(24'hc864c8, 24'hff64ff); // saturate, never wrap
+        check(24'h282828, 24'h282828); // neutral remains neutral
+        check(24'h010101, 24'h010101); // low values remain unchanged
+        check(24'hc864c8, 24'hc864c8); // high values remain unchanged
+        check(24'h102080, 24'h102080); // blue retains original intensity
+        check(24'h806010, 24'h806010); // orange retains original intensity
         $display("axis_color_isp: PASS");
         $finish;
     end

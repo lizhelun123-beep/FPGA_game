@@ -35,7 +35,7 @@ use IEEE.STD_LOGIC_1164.ALL;
 
 library work;
 use work.SimpleFIFO;
-use work.DebugLib;
+use work.CsiDebugLib;
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
 use IEEE.NUMERIC_STD.ALL;
@@ -71,8 +71,8 @@ entity LM is
       rbEn : in std_logic;
       rbRst : in std_logic;
       
-      dbgLMLane : out DebugLib.DebugLMLanes_t;
-      dbgLM : out DebugLib.DebugLM_t
+      dbgLMLane : out CsiDebugLib.DebugLMLanes_t;
+      dbgLM : out CsiDebugLib.DebugLM_t
    );
 end LM;
 

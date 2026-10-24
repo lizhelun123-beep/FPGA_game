@@ -18,4 +18,5 @@ struct reginfo
 int sensor_init(XIicPs *IicInstance);
 int sensor_configure(XIicPs *IicInstance);
 int sensor_start(XIicPs *IicInstance);
+int sensor_log_mipi_config(XIicPs *IicInstance);
 #endif

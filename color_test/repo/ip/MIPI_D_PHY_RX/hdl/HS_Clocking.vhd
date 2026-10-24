@@ -53,6 +53,8 @@ use UNISIM.VComponents.all;
 entity HS_Clocking is
    Generic (
       kGenerateMMCM : boolean := false;
+      -- Experimental fixed setting; independent of the unfinished legacy MMCM.
+      kBUFH_DDIRECT_M3 : boolean := false;
       kCtlClkFreqHz : integer := 100_000_000;
       kRefClkFreqHz : integer := 200_000_000;
       kAddDelay_ps : integer := 0
@@ -64,6 +66,7 @@ entity HS_Clocking is
       CtlClk : in STD_LOGIC;
       cRst : in std_logic; --Must be asserted when CtlClk or HS_Clk are not present/stable; must be de-asserted synchronously with CtlClk
       aLocked : out std_logic;
+      cClockRecent : out std_logic; -- CtlClk watchdog qualification; never combine before CDC
       
       dbg_cBUFR_Rst : out std_logic;
       dbg_cMMCM_Rst : out std_logic;
@@ -89,6 +92,108 @@ signal dDiv4ClkActive : std_logic;
 signal ClkFbOut, ClkFbIn, HS_Clock_1X, HS_Div4Clk_int, HS_Clock_Buf, HS_ClockDly : std_logic;
 signal divclk_dbg : std_logic;
 
+begin
+
+Candidate: if kBUFH_DDIRECT_M3 generate
+   constant kResetCycles : positive := integer(ceil(40.0e-9 * real(kCtlClkFreqHz)));
+   signal fb, feedback, serial, byteclock, bytebuf : std_logic;
+   signal locked_raw, stopped, lock_ok, capture_reset : std_logic;
+   signal capture_hold : std_logic := '1';
+   signal mmcm_reset : std_logic := '1';
+   signal loss_latched : std_logic := '1';
+   signal lock_seen : std_logic := '0';
+   signal lock_sync : std_logic_vector(1 downto 0) := "00";
+   signal reset_left : natural range 0 to kResetCycles := kResetCycles;
+   signal stable_cycles : natural range 0 to 4 := 0;
+   signal ready_ref : std_logic;
+   attribute ASYNC_REG : string;
+   attribute ASYNC_REG of lock_sync : signal is "TRUE";
+begin
+   assert not kGenerateMMCM report "Select candidate OR legacy MMCM" severity failure;
+   -- All three clocks use matching regional buffers. Physical co-location and
+   -- fixed-pin reachability remain a later placement/routing acceptance gate.
+   ClockManager: MMCME2_ADV
+      generic map (BANDWIDTH => "OPTIMIZED", COMPENSATION => "ZHOLD",
+         CLKIN1_PERIOD => 3.571, DIVCLK_DIVIDE => 1, CLKFBOUT_MULT_F => 3.0,
+         CLKFBOUT_PHASE => 0.0, CLKOUT0_DIVIDE_F => 3.0,
+         CLKOUT1_DIVIDE => 12, CLKOUT0_PHASE => 180.0, CLKOUT1_PHASE => 45.0,
+         REF_JITTER1 => 0.010, STARTUP_WAIT => false)
+      port map (CLKIN1 => HS_Clock, CLKIN2 => '0', CLKINSEL => '1',
+         CLKFBIN => feedback, CLKFBOUT => fb, CLKFBOUTB => open,
+         CLKOUT0 => serial, CLKOUT0B => open, CLKOUT1 => byteclock,
+         CLKOUT1B => open, CLKOUT2 => open, CLKOUT2B => open,
+         CLKOUT3 => open, CLKOUT3B => open, CLKOUT4 => open,
+         CLKOUT5 => open, CLKOUT6 => open,
+         LOCKED => locked_raw, CLKINSTOPPED => stopped, CLKFBSTOPPED => open,
+         RST => mmcm_reset, PWRDWN => '0', DADDR => (others => '0'),
+         DCLK => '0', DEN => '0', DI => (others => '0'), DWE => '0',
+         DO => open, DRDY => open, PSCLK => '0', PSEN => '0',
+         PSINCDEC => '0', PSDONE => open);
+   FeedbackBuffer: BUFH port map (I => fb, O => feedback);
+   SerialBuffer: BUFH port map (I => serial, O => HS_SerClk);
+   ByteBuffer: BUFH port map (I => byteclock, O => bytebuf);
+   HS_Div4Clk <= bytebuf;
+   lock_ok <= locked_raw and not stopped;
+   -- RefClk/CtlClk always runs. A sub-cycle loss is latched, even if bytebuf
+   -- has stopped. Reset is held >=40 ns; no assumed analog lock deadline.
+   process(CtlClk, lock_ok)
+   begin
+      if lock_ok = '0' then loss_latched <= '1';
+      elsif rising_edge(CtlClk) then
+         if lock_seen = '0' then loss_latched <= '0'; end if;
+      end if;
+   end process;
+   process(CtlClk, cRst)
+   begin
+      if cRst = '1' then lock_sync <= "00";
+      elsif rising_edge(CtlClk) then lock_sync <= lock_sync(0) & lock_ok;
+      end if;
+   end process;
+   process(CtlClk, cRst)
+   begin
+      if cRst = '1' then
+         mmcm_reset <= '1'; reset_left <= kResetCycles;
+         stable_cycles <= 0; lock_seen <= '0';
+      elsif rising_edge(CtlClk) then
+         if mmcm_reset = '1' then
+            stable_cycles <= 0;
+            if reset_left <= 1 then mmcm_reset <= '0'; reset_left <= 0;
+            else reset_left <= reset_left - 1; end if;
+         elsif lock_seen = '1' and loss_latched = '1' then
+            mmcm_reset <= '1'; reset_left <= kResetCycles;
+            stable_cycles <= 0; lock_seen <= '0';
+         elsif lock_sync(1) = '0' or loss_latched = '1' then
+            stable_cycles <= 0;
+         elsif stable_cycles < 4 then
+            stable_cycles <= stable_cycles + 1;
+            if stable_cycles = 3 then lock_seen <= '1'; end if;
+         end if;
+      end if;
+   end process;
+   ready_ref <= '1' when lock_seen = '1' and stable_cycles = 4 and
+      mmcm_reset = '0' and loss_latched = '0' else '0';
+   -- Publish one registered RefClk request directly to the byte reset bridge.
+   -- Raw loss still asserts asynchronously, including a pulse shorter than
+   -- RefClk and a stopped byte clock. Qualification releases only on RefClk.
+   -- This removes the RefClk combinational fan-in before CaptureBridge.
+   process(CtlClk, cRst, lock_ok)
+   begin
+      if cRst = '1' or lock_ok = '0' then capture_hold <= '1';
+      elsif rising_edge(CtlClk) then
+         capture_hold <= mmcm_reset or not ready_ref;
+      end if;
+   end process;
+   CaptureBridge: entity work.DphyResetBridge
+      port map (aRst => capture_hold, OutClk => bytebuf, oRst => capture_reset);
+   aLocked <= not capture_reset;
+   cClockRecent <= '1';
+   dbg_cBUFR_Rst <= capture_hold;
+   dbg_cMMCM_Rst <= mmcm_reset;
+   dbg_cMMCM_RstTout <= '1' when reset_left = 0 else '0';
+   dbg_cMMCM_Locked <= ready_ref;
+end generate;
+
+Legacy: if not kBUFH_DDIRECT_M3 generate
 begin
 
 dbg_cBUFR_Rst <= cBUFR_Rst;
@@ -215,7 +320,7 @@ FeedbackBuffer: BUFR
    );
 
 -- Synchronize MMCM Locked into the CtlClk domain
-MMCM_LockSync: entity work.SyncAsync
+MMCM_LockSync: entity work.DphySyncAsync
    port map (
       aReset => '0',
       aIn => aMMCM_Locked,
@@ -255,12 +360,58 @@ HS_Clock_Buf <= HS_Clock_1X;
 end generate GenMMCM;
 
 GenNoMMCM: if not kGenerateMMCM generate
+   -- BUFR is a legal fabric clock; never clock a fabric heartbeat from BUFIO.
+   -- At the qualified 93.333 Mb/s mode a byte edge arrives every 85.714 ns.
+   -- Allow 320 ns without a synchronized edge (400 ns loss bound including
+   -- CDC/ref-clock observation). Review this bound before using slower modes.
+   constant kByteTimeoutCycles : positive := integer(ceil(320.0e-9 * real(kCtlClkFreqHz)));
+   signal dByteHeartbeat : std_logic := '0';
+   signal cByteHeartbeat, cByteHeartbeat_q : std_logic := '0';
+   signal cByteRecent : std_logic := '0';
+   signal cByteAge : natural range 0 to kByteTimeoutCycles := kByteTimeoutCycles;
+begin
 --Simple use case, no PLL, just BUFIO and BUFR
    HS_Clock_Buf <= HS_ClockDly;
    cBUFR_Rst <= cExtRst when Rising_Edge(CtlClk); --make external reset glitch free
    cDelayCntEn <= '0';
    cMMCM_Rst <= '0';
    cMMCM_Locked <= '1';
+
+   ByteHeartbeat: process(HS_Div4Clk_int)
+   begin
+      if Rising_Edge(HS_Div4Clk_int) then
+         dByteHeartbeat <= not dByteHeartbeat;
+      end if;
+   end process;
+   WatchHeartbeat: entity work.DphySyncAsync
+      generic map (kResetTo => '0', kStages => 2)
+      port map (aReset => cExtRst, aIn => dByteHeartbeat,
+                OutClk => CtlClk, oOut => cByteHeartbeat);
+   WatchByteClock: process(CtlClk)
+   begin
+      if Rising_Edge(CtlClk) then
+         if cExtRst = '1' then
+            cByteHeartbeat_q <= cByteHeartbeat;
+            cByteAge <= kByteTimeoutCycles;
+            cByteRecent <= '0';
+         elsif cByteHeartbeat /= cByteHeartbeat_q then
+            cByteHeartbeat_q <= cByteHeartbeat;
+            cByteAge <= 0;
+            cByteRecent <= '1';
+         elsif cByteAge < kByteTimeoutCycles then
+            cByteAge <= cByteAge + 1;
+            if cByteAge = kByteTimeoutCycles-1 then
+               cByteRecent <= '0';
+            end if;
+         else
+            cByteRecent <= '0';
+         end if;
+      end if;
+   end process;
+   -- Keep the byte-domain launch separate. ClockLane crosses it once, then
+   -- qualifies the shared RefClk status; no mixed-domain logic before the bridge.
+   aLocked <= dDiv4ClkActive;
+   cClockRecent <= cByteRecent;
 end generate GenNoMMCM;
 
 --Fast serial clock
@@ -282,7 +433,7 @@ DivClkBuffer: BUFR
       I => HS_Clock_Buf      -- 1-bit input: Clock buffer input driven by an IBUF, MMCM or local interconnect
    );
 
-SyncAsyncLocked: entity work.SyncAsync
+SyncAsyncLocked: entity work.DphySyncAsync
    generic map (
       kResetTo => '0',
       kStages => 2) --use double FF synchronizer
@@ -293,6 +444,11 @@ SyncAsyncLocked: entity work.SyncAsync
       oOut => dDiv4ClkActive);
 
 HS_Div4Clk <= HS_Div4Clk_int;
-aLocked <= dDiv4ClkActive;
+MMCMActivity: if kGenerateMMCM generate
+   aLocked <= dDiv4ClkActive;
+   cClockRecent <= '1';
+end generate;
+
+end generate Legacy;
 
 end Behavioral;

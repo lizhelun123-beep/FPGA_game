@@ -1,0 +1,71 @@
+Property                                 Type     Read-only  Value
+BITSTREAM.CONFIG.DCIUPDATEMODE           enum     false      
+BITSTREAM.CONFIG.DONEPIN                 enum     false      
+BITSTREAM.CONFIG.INITPIN                 enum     false      
+BITSTREAM.CONFIG.INITSIGNALSERROR        enum     false      
+BITSTREAM.CONFIG.OVERTEMPPOWERDOWN       enum     false      
+BITSTREAM.CONFIG.PROGPIN                 enum     false      
+BITSTREAM.CONFIG.TCKPIN                  enum     false      
+BITSTREAM.CONFIG.TDIPIN                  enum     false      
+BITSTREAM.CONFIG.TDOPIN                  enum     false      
+BITSTREAM.CONFIG.TMSPIN                  enum     false      
+BITSTREAM.CONFIG.UNUSEDPIN               enum     false      
+BITSTREAM.CONFIG.USERID                  hex      false      
+BITSTREAM.CONFIG.USR_ACCESS              string   false      
+BITSTREAM.GENERAL.COMPRESS               enum     false      
+BITSTREAM.GENERAL.CRC                    enum     false      
+BITSTREAM.GENERAL.DISABLE_JTAG           enum     false      
+BITSTREAM.GENERAL.JTAG_XADC              enum     false      
+BITSTREAM.GENERAL.PERFRAMECRC            enum     false      
+BITSTREAM.GENERAL.XADCENHANCEDLINEARITY  enum     false      
+BITSTREAM.GENERAL.XADCPOWERDOWN          enum     false      
+BITSTREAM.READBACK.ACTIVERECONFIG        enum     false      
+BITSTREAM.READBACK.ICAP_SELECT           enum     false      
+BITSTREAM.READBACK.SECURITY              enum     false      
+BITSTREAM.READBACK.XADCPARTIALRECONFIG   enum     false      
+BITSTREAM.STARTUP.DONEPIPE               enum     false      
+BITSTREAM.STARTUP.DONE_CYCLE             enum     false      
+BITSTREAM.STARTUP.GTS_CYCLE              enum     false      
+BITSTREAM.STARTUP.GWE_CYCLE              enum     false      
+BITSTREAM.STARTUP.LCK_CYCLE              enum     false      
+BITSTREAM.STARTUP.MATCH_CYCLE            enum     false      
+BITSTREAM.STARTUP.STARTUPCLK             enum     false      
+BMM_FILE                                 string   false      
+CFGBVS                                   enum     false      
+CLASS                                    string   true       design
+CONFIG_MODE                              enum     false      
+CONFIG_VOLTAGE                           enum     false      
+CONSTRSET                                fileset  true       constrs_1
+DCP_VERSION                              string   true       Vivado v2023.1 (64-bit) SW Build 3865809 on Sun May  7 15:05:29 MDT 2023
+DEFAULT_IOSTANDARD                       string   false      
+ENABLE_AIE_NETLIST_VIEW                  bool     false      1
+ENABLE_NOC_NETLIST_VIEW                  bool     false      1
+HD.CFGSTATICONLY                         bool     false      
+HD.ISOLATED                              bool     false      
+HD.OVERRIDE_PERSIST                      bool     false      
+HD.PARTITION                             bool     false      
+HD.RECONFIGURABLE                        bool     false      
+HD.TANDEM_BITSTREAMS                     enum     false      
+IS_BLOCK                                 bool     true       1
+IS_PRSHELL_DESIGN                        bool     true       
+KEEP_COMPATIBLE                          string*  false      
+KEEP_HIERARCHY                           enum     false      
+MLO_VERSION_NUMBER                       string   false      2023.1_9
+NAME                                     string   true       checkpoint_vendor_phy_synth
+NEEDS_REFRESH                            bool     true       0
+NEEDS_SAVE                               bool     true       1
+PART                                     part     true       xc7z020clg400-2
+POST_CRC                                 enum     false      
+POST_CRC_ACTION                          enum     false      
+POST_CRC_FREQ                            int*     false      
+POST_CRC_INIT_FLAG                       enum     false      
+POST_CRC_SOURCE                          enum     false      
+RAM_AVERAGE_ACTIVITY                     int      true       
+SOC_BOOT                                 bool     false      
+SPEED_LABEL                              string   true       
+SPEED_LEVEL_ID                           string   true       
+SPEED_LEVEL_ID_DATE                      string   true       
+SRCSET                                   fileset  true       sources_1
+SUSPEND_FILTER                           string   false      
+TOP                                      string   true       bd_b733_phy_0
+USER_RAM_AVERAGE_ACTIVITY                int      false      

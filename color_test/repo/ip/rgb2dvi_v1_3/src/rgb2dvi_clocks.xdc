@@ -1,2 +1,4 @@
 ### Clock constraints ###
-create_generated_clock -source [get_ports PixelClk] -multiply_by 5 [get_ports SerialClk]
+# External-clock RGB2DVI receives sibling clocks from axi_dynclk.
+# PixelClk is the BUFR /5 branch of the same MMCM CLKOUT0 that feeds BUFIO
+# and SerialClk; do not describe SerialClk as PixelClk x5 here.

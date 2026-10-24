@@ -27,5 +27,3 @@ set_property -dict {PACKAGE_PIN W11 IOSTANDARD LVDS_25} [get_ports {dphy_data_hs
 set_property -dict {PACKAGE_PIN U8 IOSTANDARD LVDS_25} [get_ports {dphy_data_hs_n[1]}]
 set_property -dict {PACKAGE_PIN U9 IOSTANDARD LVDS_25} [get_ports {dphy_data_hs_p[1]}]
 
-set_false_path -from [get_pins {system_i/MIPI_CSI_2_RX_0/U0/MIPI_CSI2_Rx_inst/LLP_inst/mFrameCount_reg[*]/C}] -to [get_pins {system_i/MIPI_CSI_2_RX_0/U0/YesAXILITE.AXI_Lite_Control/axi_rdata_reg[*]/D}]
-set_false_path -from [get_pins {system_i/MIPI_CSI_2_RX_0/U0/MIPI_CSI2_Rx_inst/LLP_inst/mCrcErrorCount_reg[*]/C}] -to [get_pins {system_i/MIPI_CSI_2_RX_0/U0/YesAXILITE.AXI_Lite_Control/axi_rdata_reg[*]/D}]

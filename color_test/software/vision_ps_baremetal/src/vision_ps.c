@@ -108,9 +108,10 @@ int vision_set_real_scene_geometry(const VisionRealSceneGeometry *geometry)
 
 int vision_set_real_scene_profile(int enabled)
 {
-    if (enabled && !real_scene_portal_detector) return -3;
-    if (enabled && !real_scene_geometry_configured) return -4;
-    real_scene_profile = enabled != 0;
+    if (enabled < VISION_PROFILE_LEGACY || enabled > VISION_PROFILE_RESTORED) return -1;
+    if (enabled == VISION_PROFILE_TAGS && !real_scene_portal_detector) return -3;
+    if (enabled == VISION_PROFILE_TAGS && !real_scene_geometry_configured) return -4;
+    real_scene_profile = enabled;
     return 0;
 }
 
@@ -1165,6 +1166,48 @@ static int verify_portal_marker_layout(
         components[component_count++] = component;
     }
 
+    if (real_scene_profile == VISION_PROFILE_RESTORED) {
+        /* The two endpoint marks establish identity and signed orientation.
+         * Keep the old shape, solid/ring and ambiguity gates; only the removed
+         * central white stroke is no longer required. */
+        int si;
+        for (si = 0; si < component_count; ++si) {
+            int ri;
+            const PortalMarkerComponent *s = &components[si];
+            if (!portal_solid_component_ok(s)) continue;
+            for (ri = 0; ri < component_count; ++ri) {
+                const PortalMarkerComponent *r = &components[ri];
+                float dx, dy, distance, alignment, score;
+                if (si == ri || !portal_ring_component_ok(r) ||
+                    s->longitudinal*r->longitudinal >= 0.0f ||
+                    fabsf(r->longitudinal-s->longitudinal) < 0.48f ||
+                    fabsf(r->longitudinal-s->longitudinal) > 1.12f ||
+                    fabsf(r->transverse-s->transverse) > 0.25f ||
+                    fabsf(s->transverse) > VISION_PORTAL_MARKER_COMPONENT_TRANSVERSE_MAX ||
+                    fabsf(r->transverse) > VISION_PORTAL_MARKER_COMPONENT_TRANSVERSE_MAX ||
+                    fabsf(s->longitudinal) > VISION_PORTAL_MARKER_COMPONENT_LONGITUDINAL_MAX ||
+                    fabsf(r->longitudinal) > VISION_PORTAL_MARKER_COMPONENT_LONGITUDINAL_MAX ||
+                    (float)r->bbox_area < (float)s->bbox_area*1.30f ||
+                    r->major < s->major*1.15f) continue;
+                dx = r->cx-s->cx; dy = r->cy-s->cy;
+                distance = hypotf(dx, dy);
+                if (distance <= 0.0f) continue;
+                alignment = fabsf((dx*shape->ux+dy*shape->uy)/distance);
+                if (alignment < 0.92f) continue;
+                score = s->center_white+s->fill+1.0f-r->center_white+
+                        r->center_body+alignment-fabsf(s->transverse)-fabsf(r->transverse);
+                if (score > best_score) {
+                    runner_up_score = best_score; best_score = score;
+                    best_solid_index = si; best_ring_index = ri;
+                } else if (score > runner_up_score) runner_up_score = score;
+            }
+        }
+        if (best_solid_index < 0 || best_ring_index < 0 ||
+            (runner_up_score > -999.0f && best_score-runner_up_score < 0.15f)) return 0;
+        *angle_deg = (int)lroundf(atan2f(components[best_ring_index].cy-components[best_solid_index].cy,
+                                       components[best_ring_index].cx-components[best_solid_index].cx)*180.0f/PI_F);
+        return 1;
+    }
     for (line_index = 0; line_index < component_count; ++line_index) {
         int solid_index;
         if (!portal_line_component_ok(&components[line_index])) continue;
@@ -2181,8 +2224,8 @@ static void refine_source_roi(const uint8_t *frame, uint32_t stride,
     uint32_t roi_w = roi->x1-roi->x0;
     uint32_t roi_h = roi->y1-roi->y0;
     uint32_t pixels = roi_w*roi_h;
-    Component best_color;
-    Shape best_color_shape;
+    Component best_color = {0};
+    Shape best_color_shape = {0};
     uint32_t best_color_seed = 0U;
     uint32_t best_support = 0U;
     float companion_axis_x = 0.0f;
@@ -2190,8 +2233,8 @@ static void refine_source_roi(const uint8_t *frame, uint32_t stride,
     int companion_axis_valid;
     int have_color = 0;
     uint32_t seed;
-    SourceRefinedPair best_pair;
-    SourceRefinedPair best_valid_pair;
+    SourceRefinedPair best_pair = {0};
+    SourceRefinedPair best_valid_pair = {0};
     int have_pair = 0;
     int have_valid_pair = 0;
     memset(result, 0, sizeof(*result));
@@ -3204,6 +3247,11 @@ static int detection_is_in_playfield(const VisionDetection *detection,
            detection->bbox_x + detection->bbox_w > 0 &&
            detection->bbox_y + detection->bbox_h > 0;
 #else
+    if (real_scene_profile == VISION_PROFILE_RESTORED)
+        return detection->center_x >= 0 && detection->center_x < (int)width &&
+               detection->center_y >= 0 && detection->center_y < (int)height &&
+               detection->bbox_x < (int)width && detection->bbox_y < (int)height &&
+               detection->bbox_x+detection->bbox_w > 0 && detection->bbox_y+detection->bbox_h > 0;
     return detection->center_x >= VISION_PLAYFIELD_X_MIN &&
            detection->center_x <= VISION_PLAYFIELD_X_MAX &&
            detection->center_y < VISION_PLAYFIELD_Y_MAX;
@@ -3527,7 +3575,7 @@ int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,
     uint32_t grid_h;
     int result_count = 0;
     int body_index;
-    if (real_scene_profile)
+    if (real_scene_profile == VISION_PROFILE_TAGS)
         return detect_real_scene_bgr888(frame,width,height,stride,output,
                                          output_capacity,0);
     if (!frame || !output || output_capacity <= 0 || width < VISION_SAMPLE_STEP ||
@@ -3543,13 +3591,15 @@ int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,
     create_masks(frame, stride, grid_w, grid_h);
     result_count = detect_marker_walls(output, output_capacity, width, height,
                                        grid_w, grid_h);
-    if (result_count < output_capacity)
+    if (real_scene_profile != VISION_PROFILE_RESTORED && result_count < output_capacity)
         result_count += detect_marker_source(
             frame, stride, output+result_count,
             output_capacity-result_count, width, height, grid_w, grid_h);
     for (body_index = 0; body_index < 4 && result_count < output_capacity; ++body_index) {
         uint8_t bit = body_bits[body_index];
         VisionType type = body_types[body_index];
+        if (real_scene_profile == VISION_PROFILE_RESTORED && type == VISION_WALL)
+            continue; /* Retain the white-bar identity, no dark-body fallback. */
         uint32_t pixels = grid_w * grid_h;
         uint32_t seed;
         memset(visited, 0, pixels);
@@ -3636,7 +3686,7 @@ int vision_detect_bgr888(const uint8_t *frame, uint32_t width, uint32_t height,
                          uint32_t stride, VisionDetection *output,
                          int output_capacity)
 {
-    if (real_scene_profile)
+    if (real_scene_profile == VISION_PROFILE_TAGS)
         return detect_real_scene_bgr888(frame,width,height,stride,output,
                                          output_capacity,1);
     int count = vision_detect_objects_bgr888(frame, width, height, stride,
@@ -3666,7 +3716,21 @@ int vision_detect_bgr888(const uint8_t *frame, uint32_t width, uint32_t height,
     }
 #endif
     count = sort_and_suppress(output, count + target_count);
-    return filter_fixed_camera_detections(output, count, width, height);
+    count = filter_fixed_camera_detections(output, count, width, height);
+    if (real_scene_profile == VISION_PROFILE_RESTORED) {
+        int i;
+        for (i = 0; i < count; ++i) {
+            VisionDetection *d = &output[i];
+            if (d->type == VISION_MIRROR)
+                d->major_length *= VISION_MIRROR_SURFACE_LENGTH_RATIO;
+            else if (d->type == VISION_TARGET)
+                d->major_length = d->minor_width = (float)(d->bbox_w < d->bbox_h ? d->bbox_w : d->bbox_h);
+            /* Convert the legacy carrier geometry exactly once. Downstream
+             * filtering, drawing and tracing now use these same boundaries. */
+            d->geometry_is_effective = 1;
+        }
+    }
+    return count;
 }
 
 const char *vision_type_name(VisionType type)

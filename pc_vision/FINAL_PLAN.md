@@ -1,5 +1,7 @@
 # 实景光路与电脑虚拟游戏最终方案
 
+> 2026-10-27 最新决定覆盖下文三标签路线：恢复第一版 `b206663` 的彩色旧物块实景光线叠加；恢复前源码已保存于 Git `636f4e5a659b6e3e9266e54385f753759bf0ce75`。运行仍为 Standalone/core0，虚拟光源 `(32,500)` 向右。Mirror 保留黄色主体与黑色端点，Portal 恢复蓝/橙主体与白点/白环，二者均去掉中央白条；WALL 保留白条。使用同一 `vision_ps` 的 restored_markers profile，不链接 AprilTag。保留 timed B 与250ms支持间隔、安全三缓冲和同帧原图/光路提交。PENDING画面保留上限6s、明确缺失上限250ms，显示 STALE/原始帧龄，旧画面不能作为新姿态或通关依据。Portal B 默认沿 solid→ring 轴的正法向固定单侧垂直射出；出口随 B 转动，原配对规则保留给其他调用路径。当前交付仍无菜单/关卡，下面电脑完整游戏及三标签测量是历史/后续方案，不扩大此次恢复范围。构建与验证见 [STANDALONE_BEAM.md](../color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。
+
 更新：2026-10-27（实物尺寸与标签记录）。本文是后续实施方案；未把规划中的功能记为已实现或已验收。
 
 > 2026-10-27 最新部署决定：板端实景绘制改为 Standalone 裸板，不再使用 PYNQ/Linux。当前先交付固定光源 `(32,648)` 向右、五类实物交互、原图叠加的最小测试版，不含 KEY/菜单/关卡。继续复用同一 C 检测、几何和光路核心；裸板源码与构建入口见 [STANDALONE_BEAM.md](../color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。下文 PYNQ/Linux 架构保留为迁移前记录，不构成当前板端依赖；电脑游戏规划不扩大本次范围。按用户授权已完成ARM编译和BOOT生成，用户负责复制SD及实景上板。此前CSI/VDMA故障根因仍未确定；最近build4停于帧龄拒绝，build5取消该测试门限，尚待实板验收。

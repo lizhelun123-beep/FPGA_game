@@ -33,7 +33,7 @@ int main(void)
 {
     GameBeam beam;
     GameBeamConfig config={GAME_BEAM_CONFIG_VERSION,1280,720,
-                           {32,360},{1,0},250,VISION_STABILITY_A};
+                           {32,360},{1,0},250,VISION_STABILITY_A,0,0,0,0};
     VisionDetection target=detection(VISION_TARGET,100,360,1,0,30,30);
     VisionDetection mirror=detection(VISION_MIRROR,300,360,0,1,46,25);
     VisionDetection portals[2]={
@@ -66,6 +66,9 @@ int main(void)
     f=frame(portals,2,7,4,40);
     assert(game_beam_submit(&beam,&f,1U<<VISION_PORTAL_A,41)==GAME_BEAM_RESTRICTED);
     assert(!game_beam_snapshot(&beam)->valid);
+    /* Current validity never borrows a display-only retained result. */
+    assert(game_beam_snapshot(&beam)->object_count==0);
+    assert(game_beam_snapshot(&beam)->ray.segment_count==0);
 
     config.stability_algorithm=VISION_STABILITY_B;
     assert(game_beam_reset(&beam,8,50)==GAME_BEAM_OK);

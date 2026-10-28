@@ -155,18 +155,39 @@ def generate(config):
 
 
 def generate_beam(config):
-    """Standalone beam data from the SAME measured templates; no level table."""
+    """One configured detector/beam profile; no level table or fake SOURCE."""
     real = config["real_scene"]
-    max_age_ms = real["beam"]["max_age_ms"]
+    beam = real["beam"]
+    max_age_ms = beam["max_age_ms"]
     if type(max_age_ms) is not int or max_age_ms not in (0, 250):
         raise ValueError("Beam age policy must be 0 (untimed test) or 250 ms")
-    templates = real["portal_templates"]
-    physical = real["physical_geometry_mm"]
+    profile = beam.get("detector_profile", "apriltag")
+    if profile not in ("restored_markers", "apriltag"):
+        raise ValueError("Unknown beam detector profile")
+    if beam["width"] != 1280 or beam["height"] != 720 or beam["stability_algorithm"] not in ("A", "B"):
+        raise ValueError("Invalid beam dimensions/stability algorithm")
+    origin, direction = beam["emitter_point"], beam["emitter_direction"]
+    origin_c, direction_c = point(origin), point(direction)
+    if not (0 <= origin[0] <= 1279 and 0 <= origin[1] <= 719) or abs(math.hypot(*direction)-1) > .001:
+        raise ValueError("Invalid beam emitter")
+    side = beam.get("portal_b_exit_side", 0)
+    timeout, dropout = beam.get("display_timeout_ms", 0), beam.get("display_dropout_ms", 0)
+    if type(side) is not int or side not in (-1, 0, 1):
+        raise ValueError("Invalid Portal B exit side")
+    if (type(timeout) is not int or not 0 <= timeout <= 6000 or
+            type(dropout) is not int or not 0 <= dropout <= min(timeout, 250)):
+        raise ValueError("Invalid display retention")
+    profile_c = "VISION_PROFILE_RESTORED" if profile == "restored_markers" else "VISION_PROFILE_TAGS"
     lines = ['/* GENERATED from pc_vision/game_config.json; do not edit. */',
              '#include "game_beam_config.h"',
              'const GameBeamConfig game_beam_default_config = {',
-             f'    GAME_BEAM_CONFIG_VERSION,1280,720,{{32,500}},{{1,0}},{max_age_ms},VISION_STABILITY_B',
-             '};', 'const VisionPortalTemplate game_beam_portals[2] = {']
+             f'    GAME_BEAM_CONFIG_VERSION,1280,720,{origin_c},{direction_c},{max_age_ms},VISION_STABILITY_{beam["stability_algorithm"]},',
+             f'    {profile_c},{timeout},{dropout},{side}', '};']
+    if profile == "restored_markers":
+        return '\n'.join(lines)+ '\n'
+    templates = real["portal_templates"]
+    physical = real["physical_geometry_mm"]
+    lines += ['const VisionPortalTemplate game_beam_portals[2] = {']
     for name, ids in (("PORTAL_A", [10, 11, 12]), ("PORTAL_B", [20, 21, 22])):
         model = templates[name]
         corners = model["corners"]

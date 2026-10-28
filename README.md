@@ -1,6 +1,6 @@
 # FPGA 机器视觉项目
 
-当前板端实景绘制已改为 **Standalone 裸板光束测试版**：固定光源、五类实物交互、1280×720 相机原图叠加与 HDMI，不依赖 PYNQ/Linux。源码与用户编译命令见 [裸板实景测试说明](color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。目前完成源码迁移与主机配置检查，尚未 ARM 编译或实板验证；下文 Linux 游戏内容保留为历史实现说明。
+当前板端恢复 **第一版旧物块实景光线绘制**，继续使用 Standalone/core0、虚拟光源 `(32,500)`、B防抖、安全三缓冲和1280×720相机原图叠加。Mirror/Portal恢复端点标记并去掉中央白条，WALL保留白条，不运行AprilTag；Portal B可固定单侧射出。恢复前Git检查点为 `636f4e5a659b6e3e9266e54385f753759bf0ce75`。当前制品与验证见 [裸板实景测试说明](color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md) 和 `PROJECT_STATE.md`；本次未做实板验证，下文Linux游戏为历史实现。
 
 本仓库包含 AX7Z020B（Zynq-7020B）机器视觉工程、OV5640 MIPI 摄像头软件、
 颜色高亮 RTL、Vivado/Vitis 自动化脚本，以及 Portal 交互原型和设计文档。

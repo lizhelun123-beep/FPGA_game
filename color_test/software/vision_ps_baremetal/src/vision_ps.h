@@ -114,6 +114,8 @@ typedef int (*VisionPortalDetector)(const uint8_t *frame, uint32_t width,
                                     uint32_t height, uint32_t stride,
                                     VisionDetection *output, int capacity);
 void vision_set_portal_detector(VisionPortalDetector detector);
+enum { VISION_PROFILE_LEGACY = 0, VISION_PROFILE_TAGS = 1,
+       VISION_PROFILE_RESTORED = 2 };
 /* Ratios derived by the owner from the unique game's measured-mm config.
  * Detections remain in camera pixels: this does not claim plane calibration.
  * Mirror geometry uses the reflective line; bbox uses the outer body.
@@ -126,7 +128,10 @@ typedef struct {
     float wall_body_width_to_bar_span;
 } VisionRealSceneGeometry;
 int vision_set_real_scene_geometry(const VisionRealSceneGeometry *geometry);
-/* Returns -3 without a Portal backend, -4 without measured geometry. */
+/* LEGACY preserves historical behavior. TAGS requires a backend and measured
+ * geometry (-3/-4). RESTORED uses the same color/marker detector, no SOURCE,
+ * no Mirror/Portal center strip, WALL end bars, full frame and effective px
+ * geometry. Portal direction is solid -> ring; no AprilTag call is made. */
 int vision_set_real_scene_profile(int enabled);
 
 typedef struct {

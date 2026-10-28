@@ -33,6 +33,14 @@ set prepare [list $python -B [file join $app tools prepare_game_beam.py] \
     --baseline $baseline --output $generated]
 if {$xsa ne ""} {lappend prepare --xsa $xsa}
 exec {*}$prepare >@stdout 2>@stderr
+# The restored application deliberately has no AprilTag runtime. Reject a
+# mismatched configuration before compiling rather than silently changing it.
+set fd [open [file join $generated game_beam_config.c] r]
+set config_text [read $fd]
+close $fd
+if {[string first VISION_PROFILE_RESTORED $config_text] < 0} {
+    error "build_game_beam requires the restored_markers beam profile"
+}
 set xsa [file join $generated hardware.xsa]
 if {$baseline eq "live"} {
     set bsp [file join $generated bsp]
@@ -60,21 +68,20 @@ set fsbl [file join $workspace beam_platform zynq_fsbl fsbl.elf]
 set bin [file join $::env(XILINX_VITIS) gnu aarch32 nt gcc-arm-none-eabi bin]
 set compiler [file join $bin arm-none-eabi-gcc.exe]
 set src [file join $app src]
-set vendor [file join $repo third_party apriltag]
 set output [file join $workspace output]
 file mkdir $output
 set objects {}
 set common_flags [list -std=gnu99 -mcpu=cortex-a9 -mfpu=vfpv3 -mfloat-abi=hard -O2 -g3 \
-    -ffunction-sections -fdata-sections -DAPRILTAG_STANDALONE=1 -DGAME_BEAM_STANDALONE=1 \
-    -I[file join $bsp include] -I$src -I[file join $src standalone] -I$generated -I$vendor]
+    -ffunction-sections -fdata-sections -DGAME_BEAM_STANDALONE=1 \
+    -I[file join $bsp include] -I$src -I[file join $src standalone] -I$generated]
 # Canonical detector and beam core. Never glob Linux menu/worker/main sources.
 set sources {}
-foreach name {game_beam ray_game game_scene_adapter vision_stabilizer vision_ps vision_portal \
+foreach name {game_beam ray_game game_scene_adapter vision_stabilizer vision_ps \
     green_target_detector vision_overlay game_linux_capture game_linux_display ov5640 scene_protocol} {
     lappend sources [file join $src ${name}.c]
 }
 lappend sources [file join $src i2c PS_i2c.c] [file join $generated game_beam_config.c]
-foreach name {game_beam_standalone game_baremetal_io apriltag_port} {
+foreach name {game_beam_standalone game_baremetal_io} {
     lappend sources [file join $src standalone ${name}.c]
 }
 set index 0
@@ -83,20 +90,9 @@ foreach source $sources {
     exec $compiler {*}$common_flags -Wall -Wextra -Werror -c $source -o $object >@stdout 2>@stderr
     lappend objects $object
 }
-# Upstream image/math helpers only. OS worker/time sources are replaced by
-# apriltag_port.c; no pthread, POSIX clock, Linux sysroot or runtime Python.
-set vendor_sources [list [file join $vendor apriltag.c] [file join $vendor apriltag_quad_thresh.c] [file join $vendor tag36h11.c]]
-foreach name {g2d homography image_u8 image_u8_parallel image_u8x3 matd pnm svd22 unionfind zarray zmaxheap} {
-    lappend vendor_sources [file join $vendor common ${name}.c]
-}
-foreach source $vendor_sources {
-    set object [file join $output tag_[incr index].o]
-    exec $compiler {*}$common_flags -w -c $source -o $object >@stdout 2>@stderr
-    lappend objects $object
-}
 set elf [file join $output beam_standalone.elf]
 set map [file join $output beam_standalone.map]
-# Upstream AprilTag uses heap allocations; the legacy8KiB heap is insufficient.
+# Keep the established DDR heap reservation; no AprilTag sources are linked.
 # Linker bounds/DDR overflow are enforced at link, not by guessed DMA addresses.
 exec $compiler {*}$common_flags -L[file join $bsp lib] -specs=[file join $src Xilinx.spec] \
     -T[file join $src lscript.ld] -Wl,--defsym=_HEAP_SIZE=0x08000000 \

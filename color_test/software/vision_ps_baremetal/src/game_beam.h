@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define GAME_BEAM_CONFIG_VERSION 1U
+#define GAME_BEAM_CONFIG_VERSION 2U
 #define GAME_BEAM_MAX_OBJECTS 5
 #define GAME_BEAM_PHYSICAL_MASK ((1U<<VISION_MIRROR)|(1U<<VISION_PORTAL_A)| \
                                 (1U<<VISION_PORTAL_B)|(1U<<VISION_TARGET)|(1U<<VISION_WALL))
@@ -31,6 +31,9 @@ typedef struct {
     RayPoint emitter_point, emitter_direction;
     uint64_t max_age_ms;
     int stability_algorithm; /* VISION_STABILITY_A or VISION_STABILITY_B */
+    int detector_profile;
+    uint64_t display_timeout_ms, display_dropout_ms; /* display only, 0=disabled */
+    int portal_b_exit_side; /* 0=paired, +1/-1=fixed local normal */
 } GameBeamConfig;
 
 typedef struct {
@@ -40,7 +43,7 @@ typedef struct {
     SceneObject objects[GAME_BEAM_MAX_OBJECTS];
     int object_count;
     RayGameResult ray;
-    int valid;
+    int valid, display_stale;
     GameBeamStatus status;
     unsigned raw_mask, supported_mask, pending_mask, missing_mask, restricted_mask;
 } GameBeamSnapshot;
@@ -52,8 +55,10 @@ typedef struct {
     GameBeamConfig config;
     VisionTimedStabilizer stabilizer;
     GameBeamSnapshot view;
+    GameBeamSnapshot display_view;
     uint64_t reset_ms, last_now_ms, last_sequence, last_capture_ms;
-    int initialized, have_sequence;
+    uint64_t absence_since_ms;
+    int initialized, have_sequence, have_display, have_absence;
 } GameBeam;
 
 GameBeamStatus game_beam_init(GameBeam *beam, const GameBeamConfig *config,
@@ -69,9 +74,15 @@ GameBeamStatus game_beam_submit(GameBeam *beam, const GameDetectionFrame *frame,
                                 unsigned restricted_mask, uint64_t now_ms);
 GameBeamStatus game_beam_tick(GameBeam *beam, uint64_t now_ms);
 const GameBeamSnapshot *game_beam_snapshot(const GameBeam *beam);
+/* Copy the current or bounded last committed display version. A retained
+ * version has valid=0/display_stale=1/success=0 and keeps ORIGINAL frame stamps.
+ * Caller must pair it with the saved camera pixels of that same sequence. */
+int game_beam_display_snapshot(const GameBeam *beam, uint64_t now_ms,
+                                GameBeamSnapshot *snapshot);
 const char *game_beam_status_name(GameBeamStatus status);
 /* Draw only into an already-owned CPU canvas/background. No clearing, MMIO,
- * solving, scaling, device acquisition or game state mutation. */
+ * solving, scaling, device acquisition or game state mutation. The snapshot
+ * may be a dim display-only copy returned by game_beam_display_snapshot. */
 int game_beam_render(const GameBeamSnapshot *snapshot, const VisionCanvas *canvas);
 
 #ifdef __cplusplus

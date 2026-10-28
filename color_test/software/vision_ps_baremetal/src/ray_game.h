@@ -122,6 +122,14 @@ int ray_game_trace_from_emitter(const SceneObject *objects, int count,
                                 float frame_width, float frame_height,
                                 RayPoint emission_point, RayPoint direction,
                                 RayGameResult *result);
+/* Same solver, with an explicit optional Portal B exit policy. 0 preserves
+ * paired transfer; +1/-1 emits perpendicular to B on its +normal/-normal
+ * long side, independent of entry side/angle. B's axis is solid -> ring and
+ * normal=(-axis.y,axis.x), so rotating B rotates its one exit direction. */
+int ray_game_trace_from_emitter_policy(const SceneObject *objects, int count,
+                                       float frame_width, float frame_height,
+                                       RayPoint emission_point, RayPoint direction,
+                                       int portal_b_exit_side, RayGameResult *result);
 
 /* Reset a level to INIT. The first update advances it to ACQUIRE_SOURCE. */
 void ray_game_level_reset(RayGameLevel *level);

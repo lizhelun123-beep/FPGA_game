@@ -33,8 +33,9 @@ class StandaloneBeamInputs(unittest.TestCase):
         self.config = json.loads((ROOT/'pc_vision/game_config.json').read_text(encoding='utf-8'))
 
     def test_measured_config_has_fixed_emitter_and_no_level_state(self):
+        self.config['real_scene']['beam']['detector_profile'] = 'apriltag'
         text = GEN.generate_beam(self.config)
-        self.assertIn('{32,500},{1,0},0,VISION_STABILITY_B', text)
+        self.assertIn('{32.0f, 500.0f},{1.0f, 0.0f},0,VISION_STABILITY_B', text)
         self.assertEqual(text.count('.length = 55.0f, .width = 25.0f'), 2)
         self.assertIn('0.8518518519f', text)  #46mm reflective line /54mm marker spacing
         self.assertNotIn('game_default_config', text)
@@ -43,12 +44,33 @@ class StandaloneBeamInputs(unittest.TestCase):
     def test_age_policy_is_beam_only_and_can_restore_strict_limit(self):
         self.assertEqual(self.config['board_game']['scene_max_age_ms'], 250)
         self.config['real_scene']['beam']['max_age_ms'] = 250
-        self.assertIn('{32,500},{1,0},250,VISION_STABILITY_B',
+        self.assertIn('{32.0f, 500.0f},{1.0f, 0.0f},250,VISION_STABILITY_B',
                       GEN.generate_beam(self.config))
         for age in (-1, 251, 1500, False, '0'):
             self.config['real_scene']['beam']['max_age_ms'] = age
             with self.subTest(age=age), self.assertRaises(ValueError):
                 GEN.generate_beam(self.config)
+
+    def test_restored_config_needs_no_tag_or_strip_measurements(self):
+        real = self.config['real_scene']
+        del real['portal_templates']
+        del real['physical_geometry_mm']
+        text = GEN.generate_beam(self.config)
+        self.assertIn('VISION_PROFILE_RESTORED,6000,250,1', text)
+        self.assertNotIn('VisionPortalTemplate', text)
+        self.assertNotIn('SOURCE', text)
+        real['beam']['emitter_point'] = [64, 400]
+        self.assertIn('{64.0f, 400.0f}', GEN.generate_beam(self.config))
+
+    def test_restored_policy_and_retention_reject_bad_config(self):
+        for key, value in (('portal_b_exit_side', 2), ('portal_b_exit_side', True),
+                           ('display_timeout_ms', 6001), ('display_dropout_ms', 251),
+                           ('emitter_point', [1280, 400]), ('emitter_direction', [0, 0]),
+                           ('detector_profile', 'unknown')):
+            config = copy.deepcopy(self.config)
+            config['real_scene']['beam'][key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                GEN.generate_beam(config)
 
     def test_level_art_changes_do_not_change_beam(self):
         other = copy.deepcopy(self.config)
@@ -60,11 +82,13 @@ class StandaloneBeamInputs(unittest.TestCase):
         for key, value in (('ids', [10, 11, 22]), ('body_size', [81, 25]),
                            ('effective_size', [90, 25]), ('image_handedness', 0)):
             config = copy.deepcopy(self.config)
+            config['real_scene']['beam']['detector_profile'] = 'apriltag'
             config['real_scene']['portal_templates']['PORTAL_A'][key] = value
             with self.subTest(key=key), self.assertRaises(ValueError):
                 GEN.generate_beam(config)
 
     def test_reject_degenerate_wall_marker_span(self):
+        self.config['real_scene']['beam']['detector_profile'] = 'apriltag'
         self.config['real_scene']['physical_geometry_mm']['WALL']['white_mark_end_gap'] = 100
         with self.assertRaises(ValueError):
             GEN.generate_beam(self.config)
@@ -205,6 +229,7 @@ class StandaloneBeamInputs(unittest.TestCase):
         tcl.createcommand('platform', lambda *args: self.fail('Unexpected platform operation: '+str(args)))
         tcl.createcommand('setws', lambda *args: self.fail('Unexpected workspace mutation'))
         tcl.createcommand('open', lambda *args: 'stub_file')
+        tcl.createcommand('read', lambda *args: 'VISION_PROFILE_RESTORED')
         tcl.createcommand('close', lambda *args: '')
         tcl.createcommand('puts', lambda *args: '')
         tcl.createcommand('exit', lambda *args: self.fail('Unexpected Tcl exit: '+str(args)))

@@ -2,6 +2,9 @@
 
 ## 目标与范围
 
+- 2026-10-27 最新恢复决定：以 `b206663` 的第一版完整实景叠加/彩色旧物块检测为参考恢复；恢复前全部非忽略源码与未跟踪文件已存 Git 检查点 `636f4e5a659b6e3e9266e54385f753759bf0ce75`（不含构建输出）。继续 Standalone/core0、虚拟光源 `(32,500)` 向右、五类物体、无 KEY/菜单/关卡。Mirror 为黄色主体加两端黑点，Portal 为蓝/橙主体加白色实心点与圆环，取消 Mirror/Portal 中央白条和 AprilTag 运行依赖；WALL 保留两端白条。当前使用同一 `vision_ps` 的 `VISION_PROFILE_RESTORED`，旧 AprilTag 源与测量配置保留为历史，不自动启用。
+- 本次保留 timed B 防抖及 250ms 支持间隔；新观测 PENDING/缺失时，不把旧姿态冒充有效输入。显示可短时保留上一份相机原图及同帧模型/完整光段，保留原始序号/时间并明确 STALE、光线变暗；PENDING 最多6s、明确物体缺失最多250ms。物体持续移走250ms后按新的实测子集提交。沿用当前安全三缓冲/flush/退休栅栏，禁止清屏半成品提交。Portal B 单向出口由唯一 JSON 的 `portal_b_exit_side=1` 定义为 solid→ring 轴的正法向 `(-axis.y,axis.x)`，出射点在同侧长边、方向垂直向外，旋转 B 则出口随之转动；其他调用路径保留原 Portal 配对规则。
+- 本次恢复源码/host/ARM 编译及 BOOT 打包沿用已授权范围；用户负责 SD 复制与实景上板。未恢复旧裸板环形指针猜测所有权的复制方式，未授权硬件连接、复位、下载、SD写入或 Vivado。下列三标签/白线定位和 PL 加速方向是此前路线记录，本次默认已被上述旧物块恢复决定覆盖。
 - 2026-10-27 用户最新决定：板端实景绘制改为 Cortex-A9/core0 Standalone 裸板，不再以 PYNQ/Linux 为运行或部署依赖。当前交付固定光源 `(32,500)` 向右、五类物体动态交互的最小测试版，无 KEY/菜单/关卡。入口与用户编译步骤见 `color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md`；保留旧 PYNQ 实现作历史参考，后文相关默认路径不覆盖此决定。
 - 2026-10-27 最新分工：用户已授权 Codex 编码、主机检查、ARM 编译并生成本测试版 BOOT；由用户复制到 SD 卡和实景上板。这不授权 Vivado 完整构建、硬件连接/下载/复位或 SD 写入。裸板会话没有 Linux boot_id/sudo/systemd；记录输入 XSA/BIT/ELF 身份、启动日志和实际 DMA 停机状态，不能套用 Linux 会话清理命令。
 - 2026-10-27 用户允许取消非必需的250ms：当前无关卡裸板光束测试版取消按帧龄拒绝/停机（唯一JSON的`real_scene.beam.max_age_ms=0`），相机原图、模型和光路仍使用同一CPU帧，保留原始时间/序号、实测帧龄显示及所有DMA所有权/超时/异常停机。此例外不修改完整游戏`board_game.scene_max_age_ms=250`，也不代表检测延迟或实时性已改善。

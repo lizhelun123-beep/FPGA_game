@@ -7,8 +7,9 @@ from pathlib import Path
 import struct
 
 ROOT = Path(__file__).resolve().parents[4]
-SYMBOLS = ('main', 'game_beam_submit', 'ray_game_trace_from_emitter',
-           'vision_detect_bgr888', 'vision_portal_detect_bgr888',
+SYMBOLS = ('main', 'game_beam_submit',
+           'vision_detect_bgr888', 'game_beam_display_snapshot',
+           'ray_game_trace_from_emitter_policy',
            'game_display_update', 'game_baremetal_capture_copy',
            'game_beam_first_fault', 'sensor_start', 'sensor_stop')
 
@@ -43,7 +44,8 @@ def verify_elf(path):
             info['memory_bytes'] < info['file_bytes'] or
             info['load_address']+info['memory_bytes'] > 0x40000000):
         raise ValueError('Standalone DDR load/entry/span mismatch')
-    forbidden = {name for name in symbols if name.startswith(('pthread_', 'game_linux_live_session_'))}
+    forbidden = {name for name in symbols if name.startswith(('pthread_', 'game_linux_live_session_',
+                                                             'apriltag_', 'vision_portal_detect_'))}
     if forbidden:
         raise ValueError('Unexpected OS-backed symbols: '+', '.join(sorted(forbidden)))
     return dict(info, payload_sha256=hashlib.sha256(payload).hexdigest(),

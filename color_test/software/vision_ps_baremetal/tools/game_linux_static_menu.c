@@ -165,7 +165,7 @@ static int beam720_run(unsigned seconds)
 {
     Beam720 b; GameDisplayMode mode; uint64_t start,now; int result=1;
     int stop_result=GAME_DISPLAY_OK,session_result=GAME_DISPLAY_OK;
-    GameBeamConfig config={GAME_BEAM_CONFIG_VERSION,1280,720,{32,500},{1,0},250,VISION_STABILITY_B};
+    GameBeamConfig config={GAME_BEAM_CONFIG_VERSION,1280,720,{32,500},{1,0},250,VISION_STABILITY_B,0,0,0,0};
     memset(&b,0,sizeof b); b.live_in=b.live_out=-1; b.calls=game_linux_system_calls();
     b.generation=1; b.frame=(VisionCanvas){NULL,1280,720,3840,2764800};
     b.frame.data=(uint8_t*)malloc(b.frame.capacity);

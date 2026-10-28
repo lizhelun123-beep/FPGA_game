@@ -28,7 +28,11 @@ static int valid_config(const GameBeamConfig *c)
         c->emitter_point.x < 0 || c->emitter_point.x > (float)c->width-1 ||
         c->emitter_point.y < 0 || c->emitter_point.y > (float)c->height-1 ||
         (c->stability_algorithm != VISION_STABILITY_A &&
-         c->stability_algorithm != VISION_STABILITY_B))
+         c->stability_algorithm != VISION_STABILITY_B) ||
+        c->detector_profile < VISION_PROFILE_LEGACY || c->detector_profile > VISION_PROFILE_RESTORED ||
+        c->portal_b_exit_side < -1 || c->portal_b_exit_side > 1 ||
+        c->display_timeout_ms > 6000 || c->display_dropout_ms > 250 ||
+        (c->display_timeout_ms && c->display_dropout_ms > c->display_timeout_ms))
         return 0;
     direction = c->emitter_direction;
     return unit(&direction);
@@ -110,6 +114,11 @@ GameBeamStatus game_beam_reset(GameBeam *beam, uint64_t generation,
     beam->last_sequence = beam->last_capture_ms = 0;
     beam->have_sequence = 0;
     vision_stabilizer_timed_reset(&beam->stabilizer);
+    /* A generation reset is an explicit display reset; do not retain the
+     * previous generation's camera geometry or ray across a new session. */
+    beam->have_display = beam->have_absence = 0;
+    memset(&beam->display_view, 0, sizeof(beam->display_view));
+    beam->view.sequence = beam->view.captured_ms = 0;
     clear_view(beam, GAME_BEAM_NO_FRAME);
     return GAME_BEAM_OK;
 }
@@ -141,7 +150,10 @@ GameBeamStatus game_beam_submit(GameBeam *beam, const GameDetectionFrame *frame,
     if (frame->count < 0 || frame->count > GAME_BEAM_MAX_OBJECTS ||
         (frame->count && !frame->detections)) return GAME_BEAM_BAD_ARGUMENT;
     raw_mask = class_mask(frame->detections, frame->count);
-    if (frame->count && !raw_mask) return GAME_BEAM_INVALID_GEOMETRY;
+    if (frame->count && !raw_mask) {
+        clear_view(beam, GAME_BEAM_INVALID_GEOMETRY);
+        return GAME_BEAM_INVALID_GEOMETRY;
+    }
     beam->last_sequence = frame->stamp.sequence;
     beam->last_capture_ms = frame->stamp.captured_ms;
     beam->have_sequence = 1;
@@ -157,6 +169,16 @@ GameBeamStatus game_beam_submit(GameBeam *beam, const GameDetectionFrame *frame,
     beam->view.sequence = frame->stamp.sequence;
     beam->view.captured_ms = frame->stamp.captured_ms;
     if (!timed.timestamp_accepted) return GAME_BEAM_DUPLICATE_FRAME;
+    if (beam->have_display && (beam->display_view.raw_mask & ~raw_mask)) {
+        if (!beam->have_absence) {
+            beam->absence_since_ms = frame->stamp.captured_ms;
+            beam->have_absence = 1;
+        }
+        if (frame->stamp.captured_ms-beam->absence_since_ms < beam->config.display_dropout_ms) {
+            clear_view(beam, GAME_BEAM_UNAVAILABLE);
+            return GAME_BEAM_UNAVAILABLE;
+        }
+    } else beam->have_absence = 0;
     if (restricted_mask) { clear_view(beam, GAME_BEAM_RESTRICTED); return GAME_BEAM_RESTRICTED; }
     if (timed.pending_mask) { clear_view(beam, GAME_BEAM_PENDING); return GAME_BEAM_PENDING; }
     if (count < 0 || count > GAME_BEAM_MAX_OBJECTS) {
@@ -170,17 +192,21 @@ GameBeamStatus game_beam_submit(GameBeam *beam, const GameDetectionFrame *frame,
     if (object_count != count || object_count > GAME_BEAM_MAX_OBJECTS) {
         clear_view(beam, GAME_BEAM_INVALID_GEOMETRY); return GAME_BEAM_INVALID_GEOMETRY;
     }
-    result = ray_game_trace_from_emitter(objects, object_count,
+    result = ray_game_trace_from_emitter_policy(objects, object_count,
                                          (float)beam->config.width,
                                          (float)beam->config.height,
                                          beam->config.emitter_point,
-                                         beam->config.emitter_direction, &ray);
+                                         beam->config.emitter_direction,
+                                         beam->config.portal_b_exit_side, &ray);
     if (result < 0) { clear_view(beam, GAME_BEAM_INVALID_GEOMETRY); return GAME_BEAM_INVALID_GEOMETRY; }
     beam->view.object_count = object_count;
     memcpy(beam->view.objects, objects, (size_t)object_count*sizeof(objects[0]));
     beam->view.ray = ray;
     beam->view.valid = 1;
     beam->view.status = GAME_BEAM_OK;
+    beam->display_view = beam->view;
+    beam->have_display = 1;
+    beam->have_absence = 0;
     return GAME_BEAM_OK;
 }
 
@@ -202,6 +228,28 @@ const GameBeamSnapshot *game_beam_snapshot(const GameBeam *beam)
     return beam && beam->initialized ? &beam->view : NULL;
 }
 
+int game_beam_display_snapshot(const GameBeam *beam, uint64_t now_ms,
+                                GameBeamSnapshot *snapshot)
+{
+    uint64_t limit;
+    if (!beam || !beam->initialized || !snapshot || now_ms < beam->last_now_ms) return 0;
+    if (beam->view.valid && (!beam->config.max_age_ms ||
+        now_ms-beam->view.captured_ms <= beam->config.max_age_ms)) {
+        *snapshot = beam->view;
+        return 1;
+    }
+    if (!beam->have_display || beam->display_view.generation != beam->view.generation ||
+        now_ms < beam->display_view.captured_ms) return 0;
+    limit = beam->have_absence ? beam->config.display_dropout_ms : beam->config.display_timeout_ms;
+    if (!limit || now_ms-beam->display_view.captured_ms >= limit) return 0;
+    *snapshot = beam->display_view;
+    snapshot->valid = 0;
+    snapshot->display_stale = 1;
+    snapshot->status = beam->view.status;
+    snapshot->ray.success = 0; /* No successful result from a display hold. */
+    return 1;
+}
+
 const char *game_beam_status_name(GameBeamStatus status)
 {
     static const char *const names[] = {
@@ -218,13 +266,13 @@ int game_beam_render(const GameBeamSnapshot *snapshot, const VisionCanvas *canva
     if (!snapshot || !canvas || !vision_canvas_valid(canvas) ||
         canvas->width != (int)snapshot->width || canvas->height != (int)snapshot->height)
         return -1;
-    for (i=0; i<snapshot->object_count; ++i)
-        vision_canvas_object(canvas, &snapshot->objects[i], 1.0, 0, 0);
+    /* First-version real camera presentation: retain the physical background,
+     * draw the ray and virtual emitter, without filling over real objects. */
     for (i=0; i<snapshot->ray.segment_count; ++i) {
         VisionPoint a={snapshot->ray.segments[i].start.x, snapshot->ray.segments[i].start.y};
         VisionPoint b={snapshot->ray.segments[i].end.x, snapshot->ray.segments[i].end.y};
         vision_canvas_line(canvas, a, b, 3, 0);
-        vision_canvas_line(canvas, a, b, 2, 0xFFFF00U);
+        vision_canvas_line(canvas, a, b, 2, snapshot->display_stale ? 0x606000U : 0xFFFF00U);
     }
     vision_canvas_circle(canvas, (VisionPoint){snapshot->emitter_point.x, snapshot->emitter_point.y}, 8, 2, 0x00FFFFU);
     vision_canvas_line(canvas,

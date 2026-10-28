@@ -1,5 +1,33 @@
 # 裸板实景光束测试版
 
+## 2026-10-27 恢复第一版实景绘制（当前默认）
+
+恢复前的全部非忽略源码/文档已经提交到 Git：`636f4e5a659b6e3e9266e54385f753759bf0ce75`。第一版参考提交为 `b206663ec68634ded1d5d6032af98a7e3535b16a`。本次恢复它的旧物块检测与相机原图光路叠加，继续复用当前 Standalone 安全采集/显示所有者与 timed B，未回退 PL 或旧环形指针复制方式。
+
+唯一配置是 `pc_vision/game_config.json` 的 `real_scene.beam`：`detector_profile=restored_markers`，虚拟光源 `(32,500)`、方向 `(1,0)`，无实体 SOURCE。Mirror 黄色主体加两端黑点；Portal A/B 蓝/橙主体加白色实心点和白色圆环；二者都不需要中央白条或 AprilTag。WALL 暗色主体仍须两端白条；Target 保留绿色圆/环。测量标签模板继续保存在 JSON，当前生成器和运行程序不会读取它们作检测或几何依据。旧物块尺寸仍为相机像素预览，不把历史毫米模板套给旧物块；Mirror 采用旧有限反射段比例0.66，转换一次后模型/求交一致。
+
+`portal_b_exit_side=1` 表示 B 从 solid→ring 有向长轴的正法向 `(-axis.y,axis.x)` 垂直向外射出，与从 A 哪侧入射无关；发射起点位于 B 同一侧长边，并保留入口沿长边的位置。白点在左、白环在右时默认向画面下方；B 的白点在下、白环在上时默认向右。旋转 B 会转动出口。改成 `-1` 可选另一侧，`0` 是原配对变换。该可选策略只由本光束会话启用，原 `ray_game_trace`/`ray_game_trace_from_emitter` 保留旧规则。
+
+每次先构成完整 CPU 画面，再交给原三缓冲显示；不提交只恢复相机背景、尚未画完光线的中间帧。B 的死区/迟滞/确认和250ms支持间隔保持。PENDING 时可显示上一份完整相机帧及其光段，最多6s；明确漏检最多250ms，持续移走250ms后采用新的实测子集。这些保持使用旧帧原始序号/时间、暗色光线和 `STALE` 标识，`valid=0`、不继承成功结果，不将旧光路叠在新相机帧上。无新鲜确认时仍可能不产生有效光线；实际帧率和交互需实板验证。
+
+主机检查入口：`python -B color_test/software/vision_ps_baremetal/tools/test_restored_scene.py`（VS2022 MSVC，`/O2 /W4 /WX`）。覆盖无白条识别与缺标记拒绝、底行物体、旋转、B单向出口、原光线规则、B确认/超间隔重新确认，以及保留/超时/复位/原始帧标记。另有20项输入/制品检查和8项配置检查。
+
+构建使用 Vitis/XSCT2023.1：`build_game_beam.tcl -baseline live -tag restored_markers_1 -boot 1`。当前新输出为 `color_test/build/beam_standalone/restored_markers_1/output/BOOT.BIN`；该目录已存在，重编译须换新 `-tag`。入口只编译本次 C 应用，不编译 AprilTag；核对原 live 的 XSA/BIT/BSP/FSBL 后生成新 BOOT。实际产物身份见 `PROJECT_STATE.md` 当前摘要；下文 build3..9 是先前 AprilTag 版本，不能当成本次恢复制品。
+
+本次 BOOT 大小 **2262224字节**，SHA256：`93d45422b1e39df311036977bb0ea79029849798344885cc41d7754ed4455f5e`。严格 ARM 编译/链接、EABI5硬浮点、DDR边界、无动态加载/无AprilTag符号以及 FSBL+BIT+应用三个分区逐字节校验通过。日志为 `output/build/game_app/restored_markers_1_build.log`，制品核对见同输出目录 `verification.json`。Bootgen overlap 提示与原 live 相同，已确认 FSBL/应用执行内存不重叠；BIT分区目标是PL配置，不是可执行DDR。此结论仅为主机编译/制品检查，尚未实板运行。
+
+用户上板时，只把上述恢复版 `BOOT.BIN` 复制到启动 FAT 分区根目录替换原 BOOT；不复制旧 build9/旧 live BOOT，也不需要 Python/素材/ELF。Codex 未写 SD。自行重编译可用：
+
+```powershell
+& "$env:XILINX_VITIS\bin\xsct.bat" `
+  .\color_test\software\vision_ps_baremetal\tools\build_game_beam.tcl `
+  -baseline live -tag restored_markers_2 -boot 1
+```
+
+串口新增 `BEAM_PROFILE restored_markers ... portal_b_exit_side=1`、`BEAM_DIAGNOSTICS version=4` 与 `BEAM_DISPLAY sequence/captured_ms/stale/input_sequence`。`BEAM_FRAME` 是当前输入有效性；`BEAM_DISPLAY` 是实际显示版本，二者在 STALE 保留时序号可以不同。`BEAM_FRAME_COST` 分别记录采集复制、检测、UART、提交、渲染和显示，取消旧 tag/quad 计时。实际物块替换、冷启动、摄像头交互、刷新效果均须由用户上板确认；Codex 不连接硬件或写 SD。
+
+## 先前 Standalone/AprilTag 版本记录
+
 2026-10-27 起，当前实景测试改用 Cortex-A9/core0 Standalone。运行链路为：
 
 `FSBL → 匹配 PL → beam_standalone.elf → OV5640 → CSI/VDMA → CPU BGR 副本 → 原检测器/Portal 联合定位 → game_beam → 原图叠加 → HDMI`
@@ -10,7 +38,7 @@
 
 运行不需要 PYNQ、Linux、Python、rootfs、systemd、boot.py 或运行时素材文件。主机 Python 仅用于构建前检查 XSA、从唯一 `pc_vision/game_config.json` 生成 C 数据；板卡只运行 C。旧 Linux 路径保留为历史参考，没有删除或覆盖。
 
-## 已生成的 SD 启动文件
+## 历史已生成的 SD 启动文件（build9，非本次恢复）
 
 用户已改为授权 Codex 编译和生成 BOOT。本次成功输出为（WALL 暗色主体修正版）：
 

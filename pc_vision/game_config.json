@@ -269,9 +269,22 @@
       "emitter_point": [32, 500],
       "emitter_direction": [1, 0],
       "max_age_ms": 0,
-      "stability_algorithm": "B"
+      "stability_algorithm": "B",
+      "detector_profile": "restored_markers",
+      "portal_b_exit_side": 1,
+      "display_timeout_ms": 6000,
+      "display_dropout_ms": 250
     },
-    "geometry_status": "measured_objects_camera_pixel_preview",
+    "active_markers": {
+      "MIRROR": "yellow body and two black endpoint disks; no white center strip",
+      "PORTAL_A": "blue body, white solid disk and white ring; no center strip or AprilTags",
+      "PORTAL_B": "orange body, white solid disk and white ring; no center strip or AprilTags",
+      "WALL": "dark body with two transverse white end bars",
+      "TARGET": "green circular disk or annulus",
+      "SOURCE": "virtual emitter only; no physical observation",
+      "geometry": "historical marker/carrier fit in camera pixels; Mirror uses historical 0.66 finite-surface ratio, Target uses circular boundary; measured AprilTag templates below are inactive history"
+    },
+    "geometry_status": "restored_legacy_marker_camera_pixel_preview",
     "note": "User measurements supersede CAD/ZIP dimensions. Object templates are mm; each local fit projects them into camera pixels. Common-plane/lens calibration is still unavailable: ray solving remains an explicitly uncalibrated camera-pixel preview, not mm accuracy.",
     "physical_measurements_confirmed": true,
     "tag_body_mm": 12,

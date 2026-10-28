@@ -1,6 +1,8 @@
-# 纯绿色 Target 识别
+# 摄像头拍摄与纯绿色 Target 识别
 
-这是一个独立的 OpenCV 程序，用颜色和圆形几何识别实拍图中的纯绿色
+这是一个独立的 OpenCV 程序。它现在优先支持**不做识别的原始拍摄模式**，也保留旧的纯绿色
+Target 参考检测模式。拍摄模式直接保存相机返回的 BGR 帧，不添加框、文字或 mask。
+旧的检测模式用颜色和圆形几何识别实拍图中的纯绿色
 target。它不要求旧 `pc_vision` TARGET 规范中的白环或黑心，因此也能识别
 纯绿色实心圆和绿色圆环。
 
@@ -50,6 +52,19 @@ python green_target_recognition/app.py --video input.mp4 `
 ```powershell
 python green_target_recognition/app.py --camera 0 --show
 ```
+
+只拍摄原始图片、不运行绿色 Target 识别：
+
+```powershell
+python green_target_recognition/app.py `
+  --camera 0 `
+  --capture-dir green_target_recognition/output/capture `
+  --capture-count 10 `
+  --capture-interval-ms 200
+```
+
+该模式保存 `frame_000000.png` 等原始 BGR 图片，并在 JSON 中报告尺寸；`detector` 固定为
+`null`。它使用 PC/OpenCV 的摄像头接口，不能替代 recorder 的 MIPI→VDMA→HDMI 板端链路。
 
 输出文件已存在时程序会拒绝覆盖；明确需要覆盖时加 `--overwrite`。
 

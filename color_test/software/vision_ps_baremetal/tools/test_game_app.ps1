@@ -14,6 +14,8 @@ python (Join-Path $PSScriptRoot "generate_game_config.py") --output (Join-Path $
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $core = @((Join-Path $sourceRoot "game_session.c"),
           (Join-Path $sourceRoot "ray_game.c"),
+          (Join-Path $sourceRoot "game_beam.c"),
+          (Join-Path $sourceRoot "vision_stabilizer.c"),
           (Join-Path $buildRoot "game_config.c"))
 $adapter = @((Join-Path $sourceRoot "game_scene_adapter.c"),
              (Join-Path $sourceRoot "game_app.c"))
@@ -26,6 +28,8 @@ $linuxIO = @((Join-Path $sourceRoot "game_linux_io.c"))
 $flags = @("-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic", "-I$sourceRoot", "-I$buildRoot")
 $display = @((Join-Path $sourceRoot "game_linux_display.c"))
 $photo = @((Join-Path $sourceRoot "game_photo_input.c"),
+           (Join-Path $sourceRoot "game_linux_capture.c"),
+           (Join-Path $sourceRoot "scene_protocol.c"),
            (Join-Path $sourceRoot "vision_ps.c"), (Join-Path $sourceRoot "green_target_detector.c"))
 if ($SpriteOnly) {
     $spriteSources = $core + $adapter + $inputLoop + $render + $display + $linuxIO + $photo

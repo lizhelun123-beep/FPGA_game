@@ -203,7 +203,63 @@ sha256sum -c SHA256SUMS
 python3 -m pynq_vision.app --overlay system_wrapper.bit inspect-overlay
 ```
 
-## 后续唯一实测入口
+## 当前游戏持续采集路径（2026-10-26）
+
+游戏复用 `color_test/software/vision_ps_baremetal/tools/game_capture_worker.py`
+（打包为 `capture_worker.py`）、`pynq_vision/live_capture.py`、现有 VDMA 驱动与
+C `game_capture_owner_dispatch_parked`。C 的同一个 live session 持有采集/显示
+的独立非缓存分配；Python 不分配或读取图像。传感器与 S2MM 每会话启动一次，
+先启动 circular，再按官方驱动顺序转 park。冻结旧槽时，须确认新写槽的
+requested/current 一致、W1C IRQ 确实回到低位，再等两个新 START 事件。
+该 fence 复用现有显示端机制；IRQ 是 START，不可当 EOF（见
+[AMD PG020](https://docs.amd.com/r/en-US/pg020_axi_vdma/S2MM_VDMACR-S2MM-VDMA-Control-Register-Offset-30h)
+和 [官方 StartParking 实现](https://github.com/Xilinx/embeddedsw/blob/master/XilinxProcessorIPLib/drivers/axivdma/src/xaxivdma.c)）。
+
+CRC/溢出检查在 fence 后执行，覆盖先前完整帧的包尾；不在帧间复位 CSI。
+协议为 `FRAME sequence captured_ms slot writer`，C 在复制前后核对实际写槽、
+地址/布局和错误状态，复制后只对 CPU 副本检测，`FRAME_DONE` 后才允许复用槽。
+时间戳来自采集 START 之前的保守时刻，generation 沿用 C 发起请求时的值，
+250ms TTL 不变。停机先让传感器进入 standby，保持接收端/S2MM 接收尾流，
+然后确认 RS0/HALTED 才隔离 CSI、拉低 GPIO 和释放缓冲。计数器安静不是 FIFO
+空的证明；停机中的未完成帧不提交，HALTED 未确认时保留所有者及相关时钟。
+
+实板曾在首次写槽0→1后的 fence 中退出，未向 C 交出检测帧；清理后的 SR 含
+`0x90`。旧异常把 CR、SR 和 PARK 三类失败合并，未保存当时原值，故该事后
+读数不能证明最初失败就是 SOFEarly，更不能直接归因某条 PARK/CR 写。
+CRC0也不能排除整行包因 ECC/类型识别失败被 LLP 丢弃；成功长包总数不是逐帧
+行数。静态追踪未发现可直接定罪的 Bayer/Gamma 背压保持违规。
+
+新增 `CaptureBoundaryFault` 冻结既有读数中的 CR/SR/PARK、等待 phase、目标槽
+和新 START 计数；worker 在任何停传感器/排尾流/DMA-stop 之前输出
+`LIVE_CAPTURE_FIRST_FAULT`，同时记录 poll/acquire/ack 操作、阶段与前一次 CSI
+快照（初始基线未必已经验证）。CSI 校验与 DMA fence 使用独立阶段名，避免误判。
+该首样本采集不增加 MMIO、不清 IRQ/错误位、不改变接受条件。35项 host 回归及与旧实板包的
+成功/少行故障路径寄存器轨迹差分通过；模型现已分离 SOF、完整行与 CSI 包数，
+这些测试仍不等于 RTL 或实板通过。
+
+本轮实板首故障证据保存在 `output/build/game_app/park_boundary_first_fault_2/`。
+使用现有 SD/BOOT、RAM 临时诊断包和真实鼠标选择 075 后，首个故障发生在 `warmup_writer0`，尚未发生 PARK writer 切换：
+`S2MM CR=0x11001`、`SR=0x15090`、error mask `0x90`、`PARK=0`、`HSIZE=3840`、`VSIZE=720`、`stride=5760`，`0xF0=0`、`0xF4=0`，尚未发布帧。worker 的 `LIVE_CAPTURE_FIRST_FAULT` 与独立观察器寄存器样本一致。 同一窗口清理前的 CSI 锁存为 long_packets=818、CRC=0；它是包进度证据，不是行数证明。
+这把故障范围从换槽逻辑收窄到首帧 CSI/LLP 或 VDMA 帧边界；`0xF4=0` 对实际行数没有给出结论。通道级恢复已在 HALTED/GPIO0/无所有者条件下完成，随后恢复菜单；SD/BOOT/PL 未改动。
+后续应先取得同一窗口内的 CSI 计数与首个 S2MM 错误关联，再决定 RTL 或 VDMA 修正；不要据此先改 PARK 顺序、TTL 或 CRC 策略。
+
+为此生成的 `output/build/game_app/park_boundary_first_frame_1/live075_first_frame.tar.gz`
+只在采集所有者的 `LIVE_CAPTURE_FIRST_FAULT` 处理点、清理之前调用现有原子 CSI
+snapshot；不改变接受条件、PL、BOOT 或 SD。包的 Python 语法与 manifest 哈希已通过。
+两次板端窗口均未发生关卡选择（`level_changes=0`），没有启动摄像头，也没有出现
+S2MM 首错，因此均记作 NOT_RUN，不能用于 LLP/VDMA 分类。恢复阶段读到的 CSI818/CRC0
+是之前锁存值，不是这两个窗口的新证据。当前菜单已恢复为 camera-isolated 状态。
+
+随后在新 boot `8e62a663-d930-4e23-b1ee-b29356788e17` 上完成唯一
+`firstframe075` 实测。075 真实选择后先发布 sequence1/2；首错发生在第二帧已交给
+CPU 后的 `cpu_lease/poll`，不是 warmup。S2MM 为 `CR=0x11001`、`SR=0x15090`、
+error `0x90`，`PARK=0x02000200` 的写参考槽和当前写槽都为2，故障并非 PARK 换槽
+失配。同所有者 CSI 快照从累计7927推进到9908个已完成目标长包（delta1981），CRC0；
+独立观察的 `0xF0/0xF4` 仍为0。由此选择 LLP/上游 AXI-video 帧边界分支，排除
+VDMA 首帧/PARK 边界作为主因；长包计数仍不能区分提前 FS 与缺少有效行/TLAST，
+下一步只观测 LLP 输出的 FS/FE/有效行。通道错误已在 HALTED/无所有者条件下清除，
+camera-isolated 菜单已恢复；SD、BOOT、PL 未改动。
+## 旧 Python 单帧入口（关闭）
 
 **当前入口已关闭，下面命令不可用于绕过分配器门槛。** 当前环境已核准 I²C0/
 e0004000、地址0x3c。仍须实现并核准 DMA 后端、当前 PL/时钟复用和安全退出，
@@ -228,9 +284,9 @@ CSI 长包/CRC/溢出和 VDMA 布局，跳过行 padding，保存一帧无损 PN
 并以非零状态退出。文件预检失败时不创建输出目录。`PASS` 只表示该次单帧软件
 检查通过，不表示颜色/几何、链路长期误码、引脚时序或生产基线已验收。
 
-旧 `run` 入口仍需完整仓库的 `pc_vision`，并显式启用原有 720p HDMI 诊断路径；
-显示支线当前暂停，本包不将其作为下一步。最终游戏的原生 C/C++、1280×800
-纯虚拟画面与分阶段 PL 路线保持不变。
+旧 `run` 入口依赖完整仓库的 `pc_vision`，并显式启用早期 720p HDMI 诊断路径。
+当前游戏使用上文的原生 C 共享会话，最终 HDMI 为1280×720/16:9；本节旧接口
+不作为下一步实测入口。
 
 ## 离线验证
 

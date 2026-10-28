@@ -66,7 +66,7 @@ begin
  rbRxDataHS=>data,rbRxSyncHS=>sync,rbRxValidHS=>valid,rbRxActiveHS=>active,
  aDEnable=>den,aClkEnable=>cen,video_aclk=>vc,video_aresetn=>rstn,vEnable=>en,
  m_axis_video_tdata=>vd,m_axis_video_tvalid=>vv,m_axis_video_tready=>'1',
- m_axis_video_tlast=>vl,m_axis_video_tuser=>vu,CrcErrorCount=>crc_count,FrameCount=>packet_count,FifoOverflow=>ovf);
+ m_axis_video_tlast=>vl,m_axis_video_tuser=>vu,CrcErrorCount=>crc_count,FrameCount=>packet_count,FifoOverflow=>ovf, FrameStartEvent=>open,FrameEndEvent=>open);
  process(byteclk)
   variable id,n:natural:=0;variable b:std_logic_vector(7 downto 0);
  begin if rising_edge(byteclk) then

@@ -1,0 +1,4 @@
+interface:
+  display_name: "实景与虚拟光路游戏集成"
+  short_description: "按最终方案接入固定光源、Portal 精确定位、有效边界与电脑游戏界面"
+  default_prompt: "使用 $ray-game-integration 在现有工程中实现当前光路游戏改动，保持实景与 Godot 的有效场景、边界和游戏状态一致。"

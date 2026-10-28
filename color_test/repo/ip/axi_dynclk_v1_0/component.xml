@@ -840,7 +840,7 @@
       <xilinx:upgrades>
         <xilinx:canUpgradeFrom>natinst.com:user:axi_dynclk:1.0</xilinx:canUpgradeFrom>
       </xilinx:upgrades>
-      <xilinx:coreCreationDateTime>2026-10-23T15:02:11Z</xilinx:coreCreationDateTime>
+      <xilinx:coreCreationDateTime>2026-10-24T13:31:25Z</xilinx:coreCreationDateTime>
       <xilinx:tags>
         <xilinx:tag xilinx:name="nopcore"/>
         <xilinx:tag xilinx:name="natinst.com:user:axi_dynclk:1.0_ARCHIVE_LOCATION">C:/sam_work/Vivado_projects/14_4/ip/axi_dynclk_v1_0</xilinx:tag>

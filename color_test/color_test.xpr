@@ -182,10 +182,22 @@
       </File>
       <File Path="$PPRDIR/build/pl_rate93_production/build_4/synth/input_model_effective.xdc">
         <FileInfo>
+          <Attr Name="UserDisabled" Val="1"/>
           <Attr Name="UsedIn" Val="implementation"/>
         </FileInfo>
       </File>
       <File Path="$PPRDIR/build/pl_rate93_production/build_4/synth/timing_context.xdc">
+        <FileInfo>
+          <Attr Name="UserDisabled" Val="1"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/build/pl_rate93_production/build_5/synth/input_model_effective.xdc">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="implementation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/build/pl_rate93_production/build_5/synth/timing_context.xdc">
         <FileInfo>
           <Attr Name="UsedIn" Val="implementation"/>
         </FileInfo>

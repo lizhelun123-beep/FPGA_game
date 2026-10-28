@@ -102,7 +102,32 @@ typedef struct {
     float source_direction_x;
     float source_direction_y;
     int direction_valid;
+    /* 1: major/minor already describe effective interaction geometry.
+     * Legacy marker detections stay 0 for their historical conversion. */
+    int geometry_is_effective;
 } VisionDetection;
+
+/* Optional AprilTag backend registered by the real-scene host/ARM build.
+ * The legacy six-color profile remains the default. Enabling real-scene mode
+ * without its Portal backend fails instead of silently losing required tags. */
+typedef int (*VisionPortalDetector)(const uint8_t *frame, uint32_t width,
+                                    uint32_t height, uint32_t stride,
+                                    VisionDetection *output, int capacity);
+void vision_set_portal_detector(VisionPortalDetector detector);
+/* Ratios derived by the owner from the unique game's measured-mm config.
+ * Detections remain in camera pixels: this does not claim plane calibration.
+ * Mirror geometry uses the reflective line; bbox uses the outer body.
+ * Wall marker centers locate the full body, rather than becoming its ends. */
+typedef struct {
+    float mirror_reflective_to_marker_span;
+    float mirror_body_to_marker_span;
+    float mirror_body_width_to_marker_span;
+    float wall_body_to_marker_span;
+    float wall_body_width_to_bar_span;
+} VisionRealSceneGeometry;
+int vision_set_real_scene_geometry(const VisionRealSceneGeometry *geometry);
+/* Returns -3 without a Portal backend, -4 without measured geometry. */
+int vision_set_real_scene_profile(int enabled);
 
 typedef struct {
     uint8_t minimum[3];

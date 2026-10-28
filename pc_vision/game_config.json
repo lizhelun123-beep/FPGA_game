@@ -1,18 +1,37 @@
 {
   "version": 1,
   "model_sizes": {
-    "SOURCE": [54, 40],
-    "MIRROR": [140, 12],
-    "WALL": [160, 30],
-    "TARGET": [64, 64],
-    "PORTAL_A": [164, 56],
-    "PORTAL_B": [164, 56]
+    "SOURCE": [
+      54,
+      40
+    ],
+    "MIRROR": [
+      162,
+      10
+    ],
+    "WALL": [
+      160,
+      32
+    ],
+    "TARGET": [
+      80,
+      80
+    ],
+    "PORTAL_A": [
+      154,
+      58
+    ],
+    "PORTAL_B": [
+      160,
+      58
+    ]
   },
   "physics_scale": 100,
   "position_alpha": 0.45,
   "direction_alpha": 0.4,
   "match_distance": 60,
   "dropout_seconds": 0.25,
+  "stale_seconds": 0.25,
   "timeout_seconds": 6.0,
   "minimum_confidence": 0,
   "board_game": {
@@ -27,47 +46,596 @@
     "pump_tick_ms": 10,
     "render": {
       "version": 1,
-      "scene_rect": [80, 192, 880, 420]
+      "scene_rect": [
+        80,
+        192,
+        880,
+        420
+      ]
     },
-    "star_threshold_ms": [60000, 120000],
+    "star_threshold_ms": [
+      60000,
+      120000
+    ],
     "menu": {
       "version": 1,
       "width": 1280,
       "height": 800,
-      "level_rects": [[80, 64, 320, 100], [480, 64, 320, 100], [880, 64, 320, 100]],
-      "start_rect": [480, 650, 320, 100]
+      "level_rects": [
+        [
+          80,
+          64,
+          320,
+          100
+        ],
+        [
+          480,
+          64,
+          320,
+          100
+        ],
+        [
+          880,
+          64,
+          320,
+          100
+        ]
+      ],
+      "start_rect": [
+        480,
+        650,
+        320,
+        100
+      ]
     },
     "levels": [
       {
         "id": 1,
-        "reference": "sample_photo/075.png",
+        "reference": "sample_photo(1)/125.png",
         "objects": [
-          {"type": "SOURCE", "motion": "rotate_only", "center": [354.1875, 465.3125], "axis": [0.8347785464670302, -0.5505858501254755]},
-          {"type": "MIRROR", "motion": "fixed", "center": [619.5625, 293.5625], "axis": [0.01750082002013317, 0.999846848921685]},
-          {"type": "TARGET", "motion": "fixed", "center": [345, 104], "axis": [1, 0]}
-        ]
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              619.5625,
+              293.5625
+            ],
+            "axis": [
+              0.01750082002013317,
+              0.999846848921685
+            ],
+            "geometry": "marker_template"
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              345,
+              104
+            ],
+            "axis": [
+              1,
+              0
+            ],
+            "geometry": "marker_template"
+          }
+        ],
+        "emitter": {
+          "point": [
+            354.1875,
+            465.3125
+          ],
+          "direction": [
+            0.8347785464670302,
+            -0.5505858501254755
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        }
       },
       {
         "id": 2,
-        "reference": "sample_photo/076.png",
+        "reference": "sample_photo(1)/130.png",
         "objects": [
-          {"type": "SOURCE", "motion": "fixed", "center": [998.3125, 323], "axis": [-0.995646995647318, 0.09320439935147647]},
-          {"type": "TARGET", "motion": "fixed", "center": [281, 125], "axis": [1, 0]},
-          {"type": "PORTAL_A", "motion": "free", "center": [859.5, 323.625], "axis": [0.03489967944791605, -0.9993908206374684]},
-          {"type": "PORTAL_B", "motion": "free", "center": [427.125, 121.75], "axis": [0.03489967944791642, -0.9993908206374685]}
-        ]
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              281,
+              125
+            ],
+            "axis": [
+              1,
+              0
+            ],
+            "geometry": "marker_template"
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              859.5,
+              323.625
+            ],
+            "axis": [
+              0.03489967944791605,
+              -0.9993908206374684
+            ],
+            "geometry": "portal_template"
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              427.125,
+              121.75
+            ],
+            "axis": [
+              0.03489967944791642,
+              -0.9993908206374685
+            ],
+            "geometry": "portal_template"
+          }
+        ],
+        "emitter": {
+          "point": [
+            998.3125,
+            323
+          ],
+          "direction": [
+            -0.995646995647318,
+            0.09320439935147647
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        }
       },
       {
         "id": 3,
-        "reference": "sample_photo/077.png",
+        "reference": "sample_photo(1)/132.png",
         "objects": [
-          {"type": "SOURCE", "motion": "fixed", "center": [972.875, 517.375], "axis": [-0.999621786994274, 0.027500599382094867]},
-          {"type": "TARGET", "motion": "fixed", "center": [312, 283], "axis": [1, 0]},
-          {"type": "PORTAL_A", "motion": "fixed", "center": [847.5, 507.5], "axis": [0, -1]},
-          {"type": "PORTAL_B", "motion": "fixed", "center": [431.75, 119.625], "axis": [0.017500820020133392, -0.9998468489216851]},
-          {"type": "MIRROR", "motion": "free", "center": [293.125, 105.125], "axis": [0.6819761448916702, -0.7313744169703338]}
-        ]
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              312,
+              283
+            ],
+            "axis": [
+              1,
+              0
+            ],
+            "geometry": "marker_template"
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              847.5,
+              507.5
+            ],
+            "axis": [
+              0,
+              -1
+            ],
+            "geometry": "portal_template"
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              431.75,
+              119.625
+            ],
+            "axis": [
+              0.017500820020133392,
+              -0.9998468489216851
+            ],
+            "geometry": "portal_template"
+          },
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              293.125,
+              105.125
+            ],
+            "axis": [
+              0.6819761448916702,
+              -0.7313744169703338
+            ],
+            "geometry": "marker_template"
+          }
+        ],
+        "emitter": {
+          "point": [
+            972.875,
+            517.375
+          ],
+          "direction": [
+            -0.999621786994274,
+            0.027500599382094867
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        }
       }
     ]
-  }
+  },
+  "real_scene": {
+    "version": 1,
+    "coordinate_space": "camera_pixels_uncalibrated",
+    "beam": {
+      "version": 1,
+      "width": 1280,
+      "height": 720,
+      "emitter_point": [32, 500],
+      "emitter_direction": [1, 0],
+      "max_age_ms": 0,
+      "stability_algorithm": "B"
+    },
+    "geometry_status": "measured_objects_camera_pixel_preview",
+    "note": "User measurements supersede CAD/ZIP dimensions. Object templates are mm; each local fit projects them into camera pixels. Common-plane/lens calibration is still unavailable: ray solving remains an explicitly uncalibrated camera-pixel preview, not mm accuracy.",
+    "physical_measurements_confirmed": true,
+    "tag_body_mm": 12,
+    "portal_templates": {
+      "PORTAL_A": {
+        "reference": "sample_photo(1)/094.png",
+        "ids": [
+          10,
+          11,
+          12
+        ],
+        "corners": [
+          [
+            [
+              -24,
+              6
+            ],
+            [
+              -36,
+              6
+            ],
+            [
+              -36,
+              -6
+            ],
+            [
+              -24,
+              -6
+            ]
+          ],
+          [
+            [
+              36,
+              6
+            ],
+            [
+              24,
+              6
+            ],
+            [
+              24,
+              -6
+            ],
+            [
+              36,
+              -6
+            ]
+          ],
+          [
+            [
+              6,
+              12
+            ],
+            [
+              -6,
+              12
+            ],
+            [
+              -6,
+              0
+            ],
+            [
+              6,
+              0
+            ]
+          ]
+        ],
+        "center": [
+          0,
+          0
+        ],
+        "axis": [
+          1,
+          0
+        ],
+        "effective_size": [
+          55,
+          25.0
+        ],
+        "body_size": [
+          80,
+          25
+        ],
+        "reference_camera_corners": [
+          [
+            [
+              462.5596008300781,
+              335.3746337890625
+            ],
+            [
+              430.05682373046875,
+              336.0357666015625
+            ],
+            [
+              431.9872741699219,
+              372.3968200683594
+            ],
+            [
+              464.6312561035156,
+              367.9013366699219
+            ]
+          ],
+          [
+            [
+              630.0006713867188,
+              327.0704650878906
+            ],
+            [
+              596.9082641601562,
+              328.6817932128906
+            ],
+            [
+              596.5789184570312,
+              365.4067687988281
+            ],
+            [
+              632.1560668945312,
+              360.2248229980469
+            ]
+          ],
+          [
+            [
+              548.89794921875,
+              313.72314453125
+            ],
+            [
+              516.2315673828125,
+              315.73406982421875
+            ],
+            [
+              519.0941162109375,
+              349.7267150878906
+            ],
+            [
+              551.7430419921875,
+              347.65594482421875
+            ]
+          ]
+        ],
+        "unit": "mm",
+        "tag_quarter_turns": [
+          0,
+          0,
+          0
+        ],
+        "image_handedness": -1,
+        "reference_scale_px_per_mm": 2.827145699668258
+      },
+      "PORTAL_B": {
+        "reference": "sample_photo(1)/095.png",
+        "ids": [
+          20,
+          21,
+          22
+        ],
+        "corners": [
+          [
+            [
+              -24,
+              6
+            ],
+            [
+              -36,
+              6
+            ],
+            [
+              -36,
+              -6
+            ],
+            [
+              -24,
+              -6
+            ]
+          ],
+          [
+            [
+              36,
+              6
+            ],
+            [
+              24,
+              6
+            ],
+            [
+              24,
+              -6
+            ],
+            [
+              36,
+              -6
+            ]
+          ],
+          [
+            [
+              6,
+              12
+            ],
+            [
+              -6,
+              12
+            ],
+            [
+              -6,
+              0
+            ],
+            [
+              6,
+              0
+            ]
+          ]
+        ],
+        "center": [
+          0,
+          0
+        ],
+        "axis": [
+          1,
+          0
+        ],
+        "effective_size": [
+          55,
+          25.0
+        ],
+        "body_size": [
+          80,
+          25
+        ],
+        "reference_camera_corners": [
+          [
+            [
+              520.0355224609375,
+              315.8331298828125
+            ],
+            [
+              485.4906921386719,
+              316.2743225097656
+            ],
+            [
+              486.7413330078125,
+              349.5696105957031
+            ],
+            [
+              520.5715942382812,
+              350.6644287109375
+            ]
+          ],
+          [
+            [
+              698.8784790039062,
+              323.2152099609375
+            ],
+            [
+              663.9658203125,
+              322.9443054199219
+            ],
+            [
+              664.3977661132812,
+              356.40142822265625
+            ],
+            [
+              699.0289306640625,
+              355.83685302734375
+            ]
+          ],
+          [
+            [
+              609.0342407226562,
+              299.9617614746094
+            ],
+            [
+              575.5466918945312,
+              299.5262451171875
+            ],
+            [
+              572.9652099609375,
+              332.95623779296875
+            ],
+            [
+              608.0430908203125,
+              334.4659423828125
+            ]
+          ]
+        ],
+        "unit": "mm",
+        "tag_quarter_turns": [
+          0,
+          0,
+          0
+        ],
+        "image_handedness": -1,
+        "reference_scale_px_per_mm": 2.839096198654415
+      }
+    },
+    "stability_default": "B",
+    "plane_calibration_confirmed": false,
+    "physical_geometry_mm": {
+      "source": "user_confirmed_2026-10-27",
+      "PORTAL": {
+        "body_size": [
+          80,
+          25
+        ],
+        "body_shape": "capsule",
+        "tag_body_size": [
+          12,
+          12
+        ],
+        "tag_centers": [
+          [
+            -30,
+            0
+          ],
+          [
+            30,
+            0
+          ],
+          [
+            0,
+            6
+          ]
+        ],
+        "physical_markers": [
+          "AprilTag"
+        ],
+        "entry_length": 55,
+        "entry_side_offset": 12.5,
+        "entry_basis": "derived straight long sides: 80-25=55; not a centerline, circle or ring marker"
+      },
+      "MIRROR": {
+        "body_size": [
+          80,
+          25
+        ],
+        "black_dot_diameter": 8,
+        "black_dot_center_offset": 27,
+        "reflective_line_length": 46,
+        "reflective_line_center_offset": [
+          0,
+          0
+        ]
+      },
+      "WALL": {
+        "body_size": [
+          80,
+          25
+        ],
+        "white_mark_width": 9,
+        "white_mark_end_gap": 5,
+        "white_mark_span": 25,
+        "white_mark_centers": [
+          [
+            -30.5,
+            0
+          ],
+          [
+            30.5,
+            0
+          ]
+        ]
+      },
+      "TARGET": {
+        "diameter": 30
+      }
+    }
+  },
+  "model_sizes_unit": "legacy_preview_units_not_mm"
 }

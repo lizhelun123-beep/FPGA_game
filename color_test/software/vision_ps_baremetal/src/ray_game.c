@@ -94,10 +94,10 @@ int ray_game_scene_from_detections(const VisionDetection *detections, int count,
                          detection->major_length : bbox_long;
         object->width = detection->minor_width > RAY_EPSILON ?
                         detection->minor_width : bbox_short;
-        if (object->type == RAY_OBJECT_TARGET) {
+        if (object->type == RAY_OBJECT_TARGET && !detection->geometry_is_effective) {
             object->length = bbox_short;
             object->width = bbox_short;
-        } else if (object->type == RAY_OBJECT_MIRROR) {
+        } else if (object->type == RAY_OBJECT_MIRROR && !detection->geometry_is_effective) {
             /* Detection encloses the yellow carrier; reflection uses the
              * finite white stroke between the black endpoint marks. */
             object->length *= VISION_MIRROR_SURFACE_LENGTH_RATIO;
@@ -336,9 +336,11 @@ static void append_segment(RayGameResult *result, RayPoint start, RayPoint end)
     result->segment_count++;
 }
 
-int ray_game_trace(const SceneObject *objects, int count,
-                   float frame_width, float frame_height,
-                   RayGameResult *result)
+static int trace_impl(const SceneObject *objects, int count,
+                      float frame_width, float frame_height,
+                      const RayPoint *emission_point,
+                      const RayPoint *emission_direction,
+                      RayGameResult *result)
 {
     RayPoint origin;
     RayPoint direction;
@@ -348,27 +350,42 @@ int ray_game_trace(const SceneObject *objects, int count,
     if (!result) return -1;
     memset(result, 0, sizeof(*result));
     result->termination = RAY_GAME_INVALID_INPUT;
-    if (count < 0 || frame_width <= 1.0f || frame_height <= 1.0f ||
+    if (count < 0 || !isfinite(frame_width) || !isfinite(frame_height) ||
+        frame_width <= 1.0f || frame_height <= 1.0f ||
         (count && !objects))
         return -1;
-    for (index = 0; index < count; ++index) {
-        if (objects[index].type == RAY_OBJECT_SOURCE &&
-            objects[index].direction_valid) {
-            source_index = index;
-            break;
+    if (emission_point) {
+        float magnitude;
+        origin = *emission_point;
+        direction = *emission_direction;
+        magnitude = hypotf(direction.x, direction.y);
+        if (!isfinite(origin.x) || !isfinite(origin.y) ||
+            origin.x < 0 || origin.x > frame_width-1 ||
+            origin.y < 0 || origin.y > frame_height-1 ||
+            !isfinite(direction.x) || !isfinite(direction.y) ||
+            !isfinite(magnitude) || magnitude <= RAY_MIN_DIRECTION) return -1;
+        direction.x /= magnitude;
+        direction.y /= magnitude;
+    } else {
+        for (index = 0; index < count; ++index) {
+            if (objects[index].type == RAY_OBJECT_SOURCE &&
+                objects[index].direction_valid) {
+                source_index = index;
+                break;
+            }
         }
+        if (source_index < 0) {
+            result->termination = RAY_GAME_NO_SOURCE;
+            return 0;
+        }
+        direction = objects[source_index].source_direction;
+        if (!normalize(&direction)) {
+            result->termination = RAY_GAME_NO_SOURCE;
+            return 0;
+        }
+        origin = add_scaled(objects[source_index].source_tip, direction,
+                            RAY_SOURCE_OFFSET);
     }
-    if (source_index < 0) {
-        result->termination = RAY_GAME_NO_SOURCE;
-        return 0;
-    }
-    direction = objects[source_index].source_direction;
-    if (!normalize(&direction)) {
-        result->termination = RAY_GAME_NO_SOURCE;
-        return 0;
-    }
-    origin = add_scaled(objects[source_index].source_tip, direction,
-                        RAY_SOURCE_OFFSET);
     for (;;) {
         RayHit nearest;
         float edge_distance;
@@ -476,6 +493,23 @@ int ray_game_trace(const SceneObject *objects, int count,
             return 0;
         }
     }
+}
+
+int ray_game_trace(const SceneObject *objects, int count,
+                   float frame_width, float frame_height,
+                   RayGameResult *result)
+{
+    return trace_impl(objects, count, frame_width, frame_height,
+                       NULL, NULL, result);
+}
+
+int ray_game_trace_from_emitter(const SceneObject *objects, int count,
+                                float frame_width, float frame_height,
+                                RayPoint emission_point, RayPoint direction,
+                                RayGameResult *result)
+{
+    return trace_impl(objects, count, frame_width, frame_height,
+                       &emission_point, &direction, result);
 }
 
 #define RAY_STABLE_ENDPOINT_DISTANCE 4.0f

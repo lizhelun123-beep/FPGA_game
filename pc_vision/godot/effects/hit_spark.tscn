@@ -1,0 +1,55 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/hit_spark.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/effects/spark.svg" id="2_spark"]
+
+[sub_resource type="Gradient" id="Gradient_fade"]
+offsets = PackedFloat32Array(0, 0.2, 0.7, 1)
+colors = PackedColorArray(1, 1, 0.94, 1, 1, 0.94, 0.7, 1, 1, 0.74, 0.35, 0.65, 1, 0.62, 0.24, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture_fade"]
+gradient = SubResource("Gradient_fade")
+width = 128
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleMaterial_spark"]
+resource_local_to_scene = true
+particle_flag_disable_z = true
+particle_flag_align_y = true
+direction = Vector3(1, 0, 0)
+spread = 65.0
+initial_velocity_min = 40.0
+initial_velocity_max = 100.0
+gravity = Vector3(0, 48, 0)
+damping_min = 25.0
+damping_max = 45.0
+scale_min = 0.55
+scale_max = 0.95
+lifetime_randomness = 0.15
+color_ramp = SubResource("GradientTexture_fade")
+collision_mode = 0
+attractor_interaction_enabled = false
+
+[sub_resource type="CanvasItemMaterial" id="CanvasMaterial_spark"]
+blend_mode = 1
+light_mode = 1
+
+[node name="HitSpark" type="Node2D"]
+script = ExtResource("1_script")
+
+[node name="Particles" type="GPUParticles2D" parent="."]
+material = SubResource("CanvasMaterial_spark")
+emitting = false
+amount = 16
+lifetime = 0.32
+one_shot = true
+explosiveness = 1.0
+randomness = 0.0
+local_coords = false
+fixed_fps = 60
+interpolate = true
+use_fixed_seed = true
+seed = 18973
+visibility_rect = Rect2(-180, -180, 360, 360)
+process_material = SubResource("ParticleMaterial_spark")
+texture = ExtResource("2_spark")
+trail_enabled = false

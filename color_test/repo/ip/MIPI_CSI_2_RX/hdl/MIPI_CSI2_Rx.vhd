@@ -70,6 +70,8 @@ entity MIPI_CSI2_Rx is
       
 	  CrcErrorCount : out std_logic_vector(31 downto 0);
       FrameCount 	: out std_logic_vector(31 downto 0);
+	  FrameStartEvent : out std_logic;
+	  FrameEndEvent : out std_logic;
 	  FifoOverflow  : out std_logic;
 	  
       video_aresetn        : in std_logic;
@@ -138,6 +140,8 @@ architecture Behavioral of MIPI_CSI2_Rx is
          
 		 CrcErrorCount : out std_logic_vector(31 downto 0);
 		 FrameCount : out std_logic_vector(31 downto 0);
+		 FrameStartEvent : out std_logic;
+		 FrameEndEvent : out std_logic;
 		 
          dbgLLP : out DebugLLP_t
       );
@@ -339,6 +343,8 @@ LLP_inst: LLP
 	  
 	  CrcErrorCount => CrcErrorCount,
 	  FrameCount => FrameCount,
+      FrameStartEvent => FrameStartEvent,
+      FrameEndEvent => FrameEndEvent,
       
       dbgLLP => dbgLLP
    );

@@ -1,5 +1,7 @@
 # Zynq PS 裸机视觉识别
 
+当前实景绘制使用新的 [Standalone 光束入口与编译步骤](STANDALONE_BEAM.md)，由 `tools/build_game_beam.tcl` 构建 `src/standalone/game_beam_standalone.c`；不包含旧 `src/main.c`，也不使用 PYNQ/Linux 启动链。下文保留旧诊断和完整游戏开发说明，不能作为新测试版运行验收。
+
 本目录复用现有 OV5640、MIPI、VDMA、DDR 帧管理和 HDMI 链路，结果同时输出到 HDMI 和 UART1。默认源码配置保持六类识别和 Portal 光线游戏路径（`VISION_FIXED_SCENE_DEMO=0`、`VISION_GREEN_TARGET_ONLY=0`）；物理计算与 framebuffer 绘图分离。
 
 当前 MVP 在摄像头画面上仅绘制光线路径和左上角小状态栏，默认不绘制识别 bbox、类别/置信度、中心十字或成功特效。不依赖 Python、OpenCV、Linux、神经网络或 OCR。状态栏以 `R2` 标识当前固件，`DET` 显示本帧识别类别，`HIT` 显示已提交光线实际命中的类别；字母顺序为 `M`（Mirror）、`A/B`（Portal）、`T`（Target）、`S`（Source）、`W`（Wall），`N` 表示无类别。

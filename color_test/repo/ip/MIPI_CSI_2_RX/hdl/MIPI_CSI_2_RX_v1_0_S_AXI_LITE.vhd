@@ -56,6 +56,8 @@ entity MIPI_CSI_2_RX_S_AXI_LITE is
         StatusSequence : in std_logic_vector(31 downto 0);
         StatusRequest : out std_logic;
         StatusBusy : in std_logic;
+        Observation : in std_logic_vector(767 downto 0) := (others => '0');
+        ObserveArm, ObserveFreeze : out std_logic;
 		FifoOverflow : in std_logic;
 		-- User ports ends
 		-- Do not modify the ports beyond this line
@@ -156,6 +158,7 @@ architecture arch_imp of MIPI_CSI_2_RX_S_AXI_LITE is
 	signal slv_reg_wren	: std_logic;
 	signal reg_data_out	:std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
 	signal byte_index	: integer;
+    signal observe_index : unsigned(7 downto 0) := (others => '0');
 
 begin
 	-- I/O Connections assignments
@@ -248,8 +251,11 @@ begin
 	begin
 	  if rising_edge(S_AXI_ACLK) then 
         StatusRequest <= '0';
+	    ObserveArm <= '0';
+	    ObserveFreeze <= '0';
 	    if S_AXI_ARESETN = '0' then
 	      control_reg <= (kCTRL_RST => '0', kCTRL_EN => '1', others => '0');
+          observe_index <= (others => '0');
 	    else
 	      loc_addr := axi_awaddr(ADDR_LSB + OPT_MEM_ADDR_BITS downto ADDR_LSB);
 	      if (slv_reg_wren = '1') then
@@ -265,6 +271,16 @@ begin
               when b"100" =>
                 if S_AXI_WSTRB(0) = '1' and S_AXI_WDATA(0) = '1' then
                   StatusRequest <= '1';
+                end if;
+              when b"110" =>
+                if S_AXI_WSTRB(0) = '1' then
+                  observe_index <= unsigned(S_AXI_WDATA(7 downto 0));
+                end if;
+                if S_AXI_WSTRB(3) = '1' then
+                  -- Exclusive ARM/FREEZE commands; neither touches control,
+                  -- DMA registers or the source stream.
+                  ObserveArm <= S_AXI_WDATA(30) and not S_AXI_WDATA(31);
+                  ObserveFreeze <= S_AXI_WDATA(31) and not S_AXI_WDATA(30);
                 end if;
 	          when others =>
 	            control_reg <= control_reg;
@@ -356,7 +372,7 @@ begin
 	slv_reg_rden <= axi_arready and S_AXI_ARVALID and (not axi_rvalid) ;
 
 	process (control_reg, axi_araddr, S_AXI_ARESETN, slv_reg_rden, FifoOverflow,
-		FrameCount, CrcErrorCount, StatusSequence, StatusBusy)
+		FrameCount, CrcErrorCount, StatusSequence, StatusBusy, Observation, observe_index)
 	variable loc_addr :std_logic_vector(OPT_MEM_ADDR_BITS downto 0);
 	begin
 	    -- Address decoding for reading registers
@@ -375,6 +391,15 @@ begin
             reg_data_out <= StatusSequence;
           when b"101" =>
             reg_data_out <= (0 => StatusBusy, others => '0');
+          when b"110" =>
+            reg_data_out <= (others => '0');
+            reg_data_out(7 downto 0) <= std_logic_vector(observe_index);
+          when b"111" =>
+            reg_data_out <= (others => '0');
+            if to_integer(observe_index) < 24 then
+              reg_data_out <= Observation(32*to_integer(observe_index)+31 downto
+                                          32*to_integer(observe_index));
+            end if;
 	      when others =>
 	        reg_data_out  <= (others => '0');
 	    end case;

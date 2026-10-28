@@ -20,6 +20,7 @@ import numpy as np
 from pc_vision.game_app import read_photo, SceneInput, SerialSceneInput
 from pc_vision.game_scene import (GameController, Model, PlaneMapper, Stabilizer,
                                   load_game_config, map_models)
+from pc_vision.game_view import GameView, COLORS
 from pc_vision.native import NativeVision
 from pc_vision.scene_protocol import Observation, Scene, SceneOrder, StreamParser, decode, encode
 
@@ -252,6 +253,131 @@ class ControllerTests(unittest.TestCase):
                     self.assertEqual(self.game.display, ())
                     self.assertFalse(self.game.valid)
 
+    def test_invalid_and_unmappable_frames_never_renew_valid_age(self):
+        self.game.accept(scene(observation()), 0)
+        unmappable = dataclasses.replace(observation("MIRROR"), axis_valid=False)
+        for now, incoming in ((.1, scene(valid=False)), (.2, scene(unmappable)),
+                              (5.9, scene(valid=False)), (6.1, scene(valid=False))):
+            self.game.accept(incoming, now)
+            self.game.tick(now)
+            self.assertEqual(self.game.last_received, 0)
+            self.assertEqual(self.game.age(now), now)
+            self.assertEqual(self.game.status(now), "STALE")
+            self.assertEqual(self.game.display, ())
+            self.assertEqual(self.game.ray["segments"], [])
+            self.assertFalse(self.game.lock(now))
+        self.assertEqual(self.game.reason, "Scene timed out")
+        self.game.accept(scene(observation(center=(300, 100)), frame=2), 7)
+        self.assertEqual(self.game.status(7), "LIVE")
+        self.assertEqual(self.game.age(7), 0)
+        self.assertEqual(self.game.display[0].center, (300, 100))
+
+    def test_dropout_stale_and_hard_timeout_are_independent(self):
+        self.cfg.update(dropout_seconds=.1, stale_seconds=.7, timeout_seconds=2.5)
+        self.game.accept(scene(observation(), observation("WALL")), 0)
+        self.game.tick(.3)
+        self.assertEqual(self.game.status(.3), "LIVE")
+        self.assertEqual(len(self.game.display), 2)  # No packet is not a dropout.
+        self.game.accept(scene(observation(), observation("WALL"), frame=2), 1)
+        self.game.accept(scene(observation(), frame=3), 1.05)
+        self.assertTrue(next(o for o in self.game.display if o.type == "WALL").held)
+        self.game.tick(1.16)
+        self.assertEqual([o.type for o in self.game.display], ["SOURCE"])
+        self.assertEqual(self.game.status(1.16), "LIVE")
+        self.game.tick(1.76)
+        self.assertEqual(self.game.status(1.76), "STALE")
+        self.assertTrue(self.game.ray["segments"])
+        self.game.tick(3.56)
+        self.assertEqual(self.game.display, ())
+        self.assertEqual(self.game.ray["segments"], [])
+
+    def test_invalid_source_direction_clears_following_ray_immediately(self):
+        self.game.accept(scene(observation()), 0)
+        self.game.accept(scene(dataclasses.replace(observation(), direction_valid=False), frame=2), .1)
+        self.assertEqual(len(self.game.display), 1)
+        self.assertEqual(self.game.ray["segments"], [])
+
+    def test_pause_keeps_display_timestamp_even_when_input_is_fresh(self):
+        self.game.accept(scene(observation()), 0)
+        self.game.pause()
+        frozen, ray = self.game.display, self.game.ray
+        self.game.accept(scene(observation(center=(300, 100)), frame=2), .29)
+        self.assertEqual(self.game.status(.3), "LIVE")
+        self.assertTrue(self.game.display_stale(.3))
+        self.assertEqual(self.game.display_received, 0)
+        self.assertEqual(self.game.display, frozen)
+        self.assertEqual(self.game.ray, ray)
+        self.game.pause()
+        self.assertEqual(self.game.display_received, .29)
+        self.assertFalse(self.game.display_stale(.3))
+        self.assertEqual(self.game.display[0].center, (300, 100))
+
+    def test_stale_view_dims_geometry_and_never_announces_a_stale_win(self):
+        class RecordingView(GameView):
+            def text(self, canvas, label, *args, **kwargs):
+                labels.append(str(label))
+                GameView.text(canvas, label, *args, **kwargs)
+
+        labels = []
+        view = RecordingView()
+        self.game.accept(scene(observation(), observation("TARGET", center=(400, 100))), 0)
+        self.game.ray["success"] = True
+        fresh = view.render(self.game, "LIVE", 0)
+        self.assertIn("TARGET REACHED", labels)
+        labels.clear()
+        self.game.tick(.3)
+        before = self.game.last_received
+        stale = view.render(self.game, "STALE", .3)
+        self.assertIn("STALE / LAST OBSERVATION", labels)
+        self.assertNotIn("TARGET REACHED", labels)
+        self.assertEqual(self.game.last_received, before)
+        scale = min((view.width-72)/self.game.mapper.width, (view.height-260)/self.game.mapper.height)
+        offset = ((view.width-self.game.mapper.width*scale)/2,
+                  143+(view.height-260-self.game.mapper.height*scale)/2)
+        x, y = np.rint(np.asarray((400, 100))*scale+offset).astype(int)
+        np.testing.assert_array_equal(fresh[y, x], COLORS["TARGET"])
+        np.testing.assert_array_equal(stale[y, x], np.asarray(COLORS["TARGET"])//2)
+        self.assertTrue(self.game.ray["segments"])
+
+
+class LifecycleReplayTests(unittest.TestCase):
+    def test_live_monitor_first_78_scenes_do_not_blank_during_receive_silence(self):
+        path = Path(__file__).resolve().parent/"output/live_monitor01/scenes.jsonl"
+        with path.open(encoding="utf-8") as stream:
+            records = [json.loads(next(stream)) for _ in range(78)]
+        gaps = np.diff([r["elapsed"] for r in records])
+        self.assertTrue(all(gaps > .25))  # Old whole-scene dropout rule blanks every gap.
+        self.assertAlmostEqual(max(gaps), 1.828, places=3)
+        game = GameController(StubPhysics(), PlaneMapper(), load_game_config())
+        checked = 0
+        for i, record in enumerate(records):
+            incoming = Scene.from_record(record["scene"])
+            received = record["elapsed"]
+            game.accept(incoming, received, independent=record.get("independent", False))
+            expected = tuple(o for o in game.display if not o.held)
+            rays = bool(game.ray["segments"])
+            if i+1 == len(records):
+                break
+            for now in np.arange(received+.26, records[i+1]["elapsed"], .02):
+                game.tick(float(now))
+                self.assertEqual(tuple(o for o in game.display if not o.held), expected)
+                self.assertEqual(bool(game.ray["segments"]), rays)
+                self.assertEqual(game.status(float(now)), "STALE")
+                checked += 1
+        self.assertGreater(checked, 2000)
+        game.tick(game.last_received+game.cfg["timeout_seconds"])
+        self.assertEqual(game.display, ())
+
+    def test_finite_scene_timing_configuration(self):
+        for override in ({"stale_seconds": 0}, {"stale_seconds": float("inf")},
+                         {"stale_seconds": 6}, {"timeout_seconds": float("inf")},
+                         {"dropout_seconds": float("nan")}):
+            with self.subTest(override=override), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory)/"game.json"
+                path.write_text(json.dumps(override), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    load_game_config(path)
+
 
 class NativeTests(unittest.TestCase):
     @classmethod
@@ -428,6 +554,35 @@ class SerialTests(unittest.TestCase):
         self.assertEqual(game.ray["segments"], [])
         self.assertEqual(worker.telemetry(3.3, .25)["hz"], 0)
 
+    def test_invalid_duplicate_and_old_packets_do_not_renew_valid_age(self):
+        worker = self.worker()
+        worker.connected = True
+        game = GameController(StubPhysics(), PlaneMapper(), load_game_config())
+        worker.feed(encode(self.packet(1)), 0)
+        event, = worker.poll()
+        game.accept(event[0], event[-1], independent=event[4])
+        # A newer valid scene can be overwritten before the drawing thread
+        # adopts it. Neither it nor the following invalid packet re-ages the
+        # geometry that the controller actually accepted.
+        worker.feed(encode(self.packet(2)), .3)
+        invalid = self.packet(3, valid=False, objects=())
+        worker.feed(encode(invalid), .4)
+        event, = worker.poll()
+        game.accept(event[0], event[-1], independent=event[4])
+        self.assertEqual(game.last_received, 0)
+        self.assertAlmostEqual(worker.telemetry(.5, .25)["age"], .2)
+        self.assertEqual(worker.telemetry(.5, .25)["status"], "STALE")
+        self.assertEqual(game.age(.5), .5)
+        for packet in (self.packet(1), invalid):
+            worker.feed(encode(packet), .6)
+            self.assertEqual(worker.poll(), [])
+        self.assertEqual(worker.last_valid_rx, .3)
+        self.assertEqual(game.last_received, 0)
+        self.assertEqual(game.ray["segments"], [])
+        # An invalid packet itself cannot renew even the receiver's valid age.
+        worker.feed(encode(self.packet(4, valid=False, objects=())), .7)
+        self.assertAlmostEqual(worker.telemetry(.8, .25)["age"], .5)
+
     def test_high_rate_latest_only_bounded_queue_and_capture_age(self):
         worker = self.worker()
         worker.connected = True
@@ -505,8 +660,11 @@ class SerialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="game_cli_") as directory:
             photo, replay = Path(directory)/"photo", Path(directory)/"replay"
             command = [sys.executable, str(root/"pc_vision/app.py"), "--game", "--headless", "--max-frames", "1"]
-            subprocess.run([*command, "--image", str(root/"sample_photo/073.png"), "--output", str(photo)],
+            subprocess.run([*command, "--image", str(root/"sample_photo/073.png"), "--output", str(photo),
+                            "--stale-after", ".4", "--scene-timeout", "2"],
                            check=True, capture_output=True, timeout=30)
+            effective = json.loads((photo/"game_config.json").read_text())
+            self.assertEqual((effective["stale_seconds"], effective["timeout_seconds"]), (.4, 2))
             subprocess.run([*command, "--replay", str(photo/"scenes.jsonl"), "--output", str(replay)],
                            check=True, capture_output=True, timeout=30)
             self.assertEqual(json.loads((photo/"game_results.json").read_text())[0]["ray"],

@@ -27,7 +27,9 @@ def load_game_config(path=None):
     for key in ("position_alpha", "direction_alpha"):
         if not 0 < cfg[key] <= 1:
             raise ValueError(f"{key} must be in (0,1]")
-    if not (0 <= cfg["dropout_seconds"] < cfg["timeout_seconds"] and
+    if not (all(math.isfinite(cfg[k]) for k in ("dropout_seconds", "stale_seconds", "timeout_seconds")) and
+            0 <= cfg["dropout_seconds"] < cfg["timeout_seconds"] and
+            0 < cfg["stale_seconds"] < cfg["timeout_seconds"] and
             cfg["timeout_seconds"] > 0 and cfg["match_distance"] > 0 and
             math.isfinite(cfg["physics_scale"]) and 1 <= cfg["physics_scale"] <= 10000 and
             0 <= cfg["minimum_confidence"] <= 100):
@@ -199,6 +201,8 @@ class Stabilizer:
         return tuple(model for model, _ in updated)
 
     def expire(self, now):
+        # A held track is an observed absence. Silence alone never makes a
+        # currently observed track held; the controller owns whole-scene expiry.
         self.tracks = [(model, last) for model, last in self.tracks
                        if not model.held or
                        now-last < self.cfg["dropout_seconds"]]
@@ -206,8 +210,18 @@ class Stabilizer:
 
 
 class GameController:
-    def __init__(self, native, mapper, cfg):
+    def __init__(self, native, mapper, cfg, fixed_emitter=None):
         self.native, self.mapper, self.cfg = native, mapper, cfg
+        self.fixed_emitter = None
+        if fixed_emitter is not None:
+            try:
+                point = tuple(float(v) for v in fixed_emitter["point"])
+                direction = unit(fixed_emitter["direction"])
+            except (KeyError, TypeError, ValueError):
+                raise ValueError("Invalid fixed emitter")
+            if len(point) != 2 or not all(math.isfinite(v) for v in point):
+                raise ValueError("Invalid fixed emitter point")
+            self.fixed_emitter = (point, direction)
         self.stabilizer = Stabilizer(cfg)
         self.reset()
 
@@ -217,6 +231,8 @@ class GameController:
         self.ray = self.empty_ray()
         self.frame = self.display_frame = None
         self.last_received = None
+        self.display_received = None
+        self.display_persistent = False
         self.valid = False
         self.persistent = False
         self.paused = self.locked = False
@@ -228,23 +244,47 @@ class GameController:
 
     def adopt(self):
         self.display, self.display_frame = self.live, self.frame
+        self.display_received = self.last_received
+        self.display_persistent = self.persistent
+        if not self.valid or any(o.held for o in self.display):
+            self.ray = self.empty_ray()
+            return
+        if self.fixed_emitter is not None:
+            point, direction = self.fixed_emitter
+            source_size = tuple(self.cfg["model_sizes"]["SOURCE"])
+            source_center = tuple(np.asarray(point) - np.asarray(direction) * source_size[0] * (2.0 / 3.0))
+            source = Model("SOURCE", source_center, direction, source_size, 100, True)
+            # This logical emitter is configuration, not a camera observation
+            # and is therefore never added to self.display.
+            self.ray = self.native.trace((source, *self.display), self.mapper.width,
+                                         self.mapper.height, self.cfg["physics_scale"])
+            return
         sources = [o for o in self.live if o.type == "SOURCE" and o.direction_valid]
         self.ray = (self.native.trace(self.display, self.mapper.width, self.mapper.height,
                                      self.cfg["physics_scale"])
-                    if self.valid and len(sources) == 1 else self.empty_ray())
+                    if len(sources) == 1 else self.empty_ray())
 
     def accept(self, scene, now, persistent=False, independent=False):
-        self.frame, self.last_received, self.persistent = scene.frame, now, persistent
+        self.frame, self.persistent = scene.frame, persistent
+        if independent:
+            self.stabilizer.clear()
+            self.last_received = None  # No age/geometry crosses a session or photo.
         try:
             if not scene.valid:
                 raise ValueError("Invalid recognition frame")
             models = map_models(scene, self.mapper, self.cfg)
-            if independent:
-                self.stabilizer.clear()
+            if self.fixed_emitter is not None and any(o.type == "SOURCE" for o in models):
+                raise ValueError("Fixed-emitter scenes must not contain SOURCE")
+            # Only a usable complete observation advances the data clock.
+            # Invalid frames still clear immediately, without renewing its age.
             self.live = self.stabilizer.update(models, now)
+            self.last_received = now
             self.valid = True
-            sources = [o for o in self.live if o.type == "SOURCE" and o.direction_valid]
-            self.reason = "Scene ready" if len(sources) == 1 else "Need exactly one valid SOURCE"
+            if self.fixed_emitter is not None:
+                self.reason = "Scene ready (fixed emitter)"
+            else:
+                sources = [o for o in self.live if o.type == "SOURCE" and o.direction_valid]
+                self.reason = "Scene ready" if len(sources) == 1 else "Need exactly one valid SOURCE"
         except ValueError as error:
             self.stabilizer.clear()
             self.live, self.valid, self.reason = (), False, str(error)
@@ -254,7 +294,7 @@ class GameController:
     def tick(self, now):
         if self.last_received is None or self.persistent:
             return
-        age = now-self.last_received
+        age = self.age(now)
         if age >= self.cfg["timeout_seconds"]:
             self.stabilizer.clear()
             self.live, self.valid, self.reason = (), False, "Scene timed out"
@@ -262,13 +302,28 @@ class GameController:
             # Silence between complete scenes is not an observed dropout.
             # Only explicitly missing, held tracks use the short dropout TTL.
             expired = self.stabilizer.expire(now)
-            if self.valid and age >= self.cfg["dropout_seconds"]:
+            if self.valid and age >= self.cfg["stale_seconds"]:
                 self.reason = "Showing last scene (stale)"
             if expired == self.live:
                 return
             self.live = expired
         if not self.paused and not self.locked:
             self.adopt()
+
+    def age(self, now):
+        """Age of the last usable observation, in the PC receive clock domain."""
+        return None if self.last_received is None else max(0, now-self.last_received)
+
+    def status(self, now):
+        if not self.valid or self.last_received is None:
+            return "STALE"
+        return "LIVE" if self.persistent or self.age(now) < self.cfg["stale_seconds"] else "STALE"
+
+    def display_stale(self, now):
+        if self.status(now) != "LIVE":
+            return True
+        return (not self.display_persistent and self.display_received is not None and
+                now-self.display_received >= self.cfg["stale_seconds"])
 
     def pause(self):
         self.paused = not self.paused
@@ -278,9 +333,9 @@ class GameController:
     def lock(self, now):
         self.tick(now)
         sources = [o for o in self.live if o.type == "SOURCE" and o.direction_valid]
-        fresh = self.persistent or (self.last_received is not None and
-                                   now-self.last_received < self.cfg["dropout_seconds"])
-        if self.valid and fresh and len(sources) == 1 and not any(o.held for o in self.live):
+        fresh = self.status(now) == "LIVE"
+        source_ready = self.fixed_emitter is not None or len(sources) == 1
+        if self.valid and fresh and source_ready and not any(o.held for o in self.live):
             # Lock the latest complete scene, even if the display was paused.
             self.adopt()
             self.locked = True

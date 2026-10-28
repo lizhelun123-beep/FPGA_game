@@ -15,6 +15,11 @@ extern "C" {
 
 typedef enum { GAME_FIXED = 0, GAME_ROTATE_ONLY, GAME_FREE } GameMotion;
 typedef enum {
+    GAME_GEOMETRY_CONFIGURED = 0,
+    GAME_GEOMETRY_PORTAL_TEMPLATE = 1,
+    GAME_GEOMETRY_MARKER_TEMPLATE = 2
+} GameGeometryMode;
+typedef enum {
     GAME_SELECT_LEVEL = 0, GAME_PREPARING, GAME_RUNNING,
     GAME_CLEARED, GAME_TIMED_OUT
 } GameState;
@@ -28,13 +33,28 @@ typedef enum {
 typedef struct {
     SceneObject anchor;
     GameMotion motion;
+    /* Explicit camera-reference mode: 1=Portal tag template,
+     * 2=Mirror/Wall/Target marker template. The reliable detector and mapping
+     * supply final effective dimensions from the same physical template as
+     * center/axis, never from a generic color bbox. SOURCE is never eligible.
+     * Default zero keeps configured sizes, including calibrated-mm defaults. */
+    int use_template_geometry;
 } GameObjectConfig;
+
+/* Level data, never a camera observation. point is the exact first-segment
+ * origin in the same coordinate space as the effective scene. */
+typedef struct {
+    int enabled;
+    RayPoint point;
+    RayPoint direction;
+} GameEmitterConfig;
 
 typedef struct {
     unsigned int id;
     const char *reference;
     int object_count;
     GameObjectConfig objects[GAME_MAX_MODELS];
+    GameEmitterConfig emitter;
 } GameLevelConfig;
 
 /* Immutable for the lifetime of the session. Dimensions/sizes are logical
@@ -52,11 +72,15 @@ typedef struct {
     GameLevelConfig levels[GAME_MAX_LEVELS];
 } GameConfig;
 
-/* Already mapped observations; exactly one of every configured class.
+/* Already mapped observations; exactly one of every configured physical class.
+ * A level with emitter.enabled rejects observed SOURCE and creates its own
+ * solver/display SOURCE only after the physical scene has passed validation.
  * axes must be reliable; SOURCE uses source_direction + direction_valid.
  * Do not feed held/predicted objects as observations: held must be set if ANY
  * object was retained. valid includes upstream mapping/orientation validity.
- * Measured bbox sizes and source_tip are deliberately ignored.
+ * Measured bbox sizes and source_tip are deliberately ignored. Only an explicit
+ * template rule accepts observed length/width from its declared class-specific
+ * marker template, not a generic bbox. TARGET length and width must agree.
  * sequence must strictly increase within generation (no wrap); captured_ms
  * must also strictly increase, on the same monotonic timeline as now_ms.
  * Stamp generation when capture/work is dispatched, never when it completes. */
@@ -69,7 +93,9 @@ typedef struct {
 } GameSceneInput;
 
 /* One coherent model/ray/result version for a future renderer. Mirror endpoints
- * are center +/- axis*length/2. SOURCE tip is regenerated from this same model.
+ * are center +/- axis*length/2. For a logical emitter, SOURCE center/source_tip
+ * equal the configured emission point; its first ray starts there exactly.
+ * Legacy physical SOURCE tip is regenerated from the same fixed model.
  * Full solver output is retained even when render_budget_exceeded is true.
  * Serialize calls and copy this snapshot at the presentation frame boundary;
  * the core provides no threads, clocks, smoothing, devices or drawing. */

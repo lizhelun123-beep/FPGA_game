@@ -114,6 +114,15 @@ int ray_game_trace(const SceneObject *objects, int count,
                    float frame_width, float frame_height,
                    RayGameResult *result);
 
+/* Same intersections, portal rules and complete result as ray_game_trace,
+ * with an explicit level emitter. Starts exactly at emission_point; the
+ * legacy physical SOURCE tip offset is not applied. SOURCE entries, if any,
+ * are presentation data and do not define the emission conditions. */
+int ray_game_trace_from_emitter(const SceneObject *objects, int count,
+                                float frame_width, float frame_height,
+                                RayPoint emission_point, RayPoint direction,
+                                RayGameResult *result);
+
 /* Reset a level to INIT. The first update advances it to ACQUIRE_SOURCE. */
 void ray_game_level_reset(RayGameLevel *level);
 

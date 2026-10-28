@@ -1,0 +1,4 @@
+interface:
+  display_name: "Xilinx 工程流程与制品交接"
+  short_description: "仅为实际 Vivado/Vitis 或板端交接路由阶段、版本与同源制品"
+  default_prompt: "使用 $xilinx-project-flow 处理本次实际工具链或板端交接任务，核对阶段、版本、既有入口和授权范围。"

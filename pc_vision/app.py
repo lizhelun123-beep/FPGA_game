@@ -109,7 +109,12 @@ def main(argv=None):
     source.add_argument("--replay", type=Path, help="scene-v1 JSONL recording for game mode")
     source.add_argument("--serial", help="Explicit UART port for board scenes (e.g. COM5); never auto-detected")
     parser.add_argument("--baud", type=int, default=115200, help="UART baud, 8N1; firmware default 115200")
+    parser.add_argument("--godot-scene", type=Path,
+                        help="Atomically publish the adopted scene for the Godot live presenter")
     parser.add_argument("--game", action="store_true", help="Independent virtual game using production C recognition/physics")
+    parser.add_argument("--overlay", action="store_true", help="Real camera-image overlay using the same C detector/session/rays")
+    parser.add_argument("--level", type=int, choices=(1, 2, 3), default=1, help="Initial real-scene overlay level")
+    parser.add_argument("--stability", choices=("A", "B"), default="B", help="One C pose filter for overlay streams; photos are independent")
     parser.add_argument("--native-game", action="store_true", help="Offline three-level C game; Python only transports files/mouse/native pixels")
     parser.add_argument("--assets", type=Path, default=Path("output/build/game_app/offline_native_20261021/assets/game_assets.bin"))
     parser.add_argument("--start-photo", default="077.png")
@@ -118,6 +123,7 @@ def main(argv=None):
     parser.add_argument("--calibration-out", type=Path)
     parser.add_argument("--plane-size", type=float, nargs=2, metavar=("WIDTH_MM", "HEIGHT_MM"))
     parser.add_argument("--scene-timeout", type=float)
+    parser.add_argument("--stale-after", type=float, help="Game scene age before STALE; retains geometry until scene-timeout")
     parser.add_argument("--input-hz", type=float, default=8, help="Offline video processing cadence")
     parser.add_argument("--replay-speed", type=float, default=1)
     parser.add_argument("--cc", help="Host GCC path; default is gcc on PATH")
@@ -137,10 +143,23 @@ def main(argv=None):
         parser.error("width and max-frames must be nonnegative")
     if (args.save_frames or args.save_debug) and args.output is None:
         parser.error("--save-frames/--save-debug requires --output")
+    if args.stale_after is not None and not args.game:
+        parser.error("--stale-after requires --game")
+    if args.overlay:
+        if args.game or args.native_game or args.serial or args.replay or args.godot_scene:
+            parser.error("--overlay requires raw image/photos/video/camera and cannot combine with other game modes")
+        if args.width or args.config or args.disable or args.types or args.calibration or args.game_config or args.plane_size or args.calibration_out or args.save_debug or args.scene_timeout is not None:
+            parser.error("--overlay uses canonical C detection/configuration and unscaled, uncalibrated camera pixels")
+        if __package__:
+            from .real_scene import run_real_scene
+        else:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+            from pc_vision.real_scene import run_real_scene
+        return run_real_scene(args)
     if args.native_game:
-        if args.camera is not None or args.serial or args.calibration or args.game_config or args.plane_size:
+        if args.camera is not None or args.serial or args.godot_scene or args.calibration or args.game_config or args.plane_size:
             parser.error("Native offline preview accepts files only and the generated canonical uncalibrated configuration")
-        if args.width or args.config or args.disable or args.types or args.save_debug or args.show_rejected or args.scene_timeout is not None or args.calibration_out:
+        if args.width or args.config or args.disable or args.types or args.save_debug or args.show_rejected or args.scene_timeout is not None or args.stale_after is not None or args.calibration_out:
             parser.error("Native mode uses unchanged C detection and canonical timing; detector/calibration override flags are unavailable")
         if not np.isfinite(args.input_hz) or args.input_hz <= 0 or args.replay_speed != 1:
             parser.error("Native input-hz must be positive and replay-speed must be 1 to preserve capture timestamps")
@@ -163,12 +182,16 @@ def main(argv=None):
             parser.error("plane-size must be finite positive measured dimensions in mm")
         if args.scene_timeout is not None and (not np.isfinite(args.scene_timeout) or args.scene_timeout <= 0):
             parser.error("scene-timeout must be finite and positive")
+        if args.stale_after is not None and (not np.isfinite(args.stale_after) or args.stale_after <= 0):
+            parser.error("stale-after must be finite and positive")
         if __package__:
             from .game_app import run_game
         else:
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
             from pc_vision.game_app import run_game
         return run_game(args)
+    if args.godot_scene:
+        parser.error("--godot-scene requires --game")
     if args.photos or args.replay or args.serial:
         parser.error("--photos/--replay/--serial requires --game")
     config = load_config(args.config)

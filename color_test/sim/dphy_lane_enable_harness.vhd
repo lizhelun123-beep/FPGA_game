@@ -55,7 +55,7 @@ begin
          m_axis_video_tdata => video_tdata, m_axis_video_tvalid => video_tvalid,
          m_axis_video_tready => video_tready, m_axis_video_tlast => video_tlast,
          m_axis_video_tuser => video_tuser, CrcErrorCount => open, FrameCount => open,
-         FifoOverflow => open);
+         FifoOverflow => open, FrameStartEvent => open, FrameEndEvent => open);
 
    phy: entity dphy.MIPI_DPHY_Receiver
       generic map (

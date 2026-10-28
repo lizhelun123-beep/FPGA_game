@@ -1,5 +1,7 @@
 # FPGA 机器视觉项目
 
+当前板端实景绘制已改为 **Standalone 裸板光束测试版**：固定光源、五类实物交互、1280×720 相机原图叠加与 HDMI，不依赖 PYNQ/Linux。源码与用户编译命令见 [裸板实景测试说明](color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。目前完成源码迁移与主机配置检查，尚未 ARM 编译或实板验证；下文 Linux 游戏内容保留为历史实现说明。
+
 本仓库包含 AX7Z020B（Zynq-7020B）机器视觉工程、OV5640 MIPI 摄像头软件、
 颜色高亮 RTL、Vivado/Vitis 自动化脚本，以及 Portal 交互原型和设计文档。
 
@@ -79,7 +81,7 @@ python pc_vision/app.py --game --photos sample_photo
 - `color_test/software/`：Cortex-A9 裸机摄像头和显示应用源码。
 - `color_test/tools/`：Vivado 构建、Vitis 构建、JTAG 下载和硬件诊断脚本。
 - `color_test/sim/`：RTL 与摄像头恢复流程测试。
-- [`skill/`](skill/README.md)：面向自主选题初级组的三项可复用技能、接口模板与离线日志分析器。
+- [`skill/`](skill/README.md)：面向当前摄像头/游戏闭环的四项可复用技能、接口模板与离线日志分析器。
 - `doc/`：方案、调研和板上故障排查记录。
 - `portal-showcase/`：浏览器交互原型。
 

@@ -336,8 +336,16 @@ def llp_frame_boundary_structure(stage):
             'Wrong LLP boundary hierarchy')
     require(all(row[2:4] == ['FDRE', "1'b0"] and row[4] and row[4] == row[6] for row in rows),
             'LLP pending/SOF register INIT/type/clock differs from CSI counters')
-    require(len({row[5] for row in rows}) == 1 and rows[0][5], 'LLP pending/SOF reset differs')
+    # Synthesis may absorb a synchronous FDRE reset into its D/CE LUT.
+    # Prove reset=1 forces next Q=0 on the exact DCP instead of requiring
+    # identical physical R pins; unknown cones and stale evidence reject.
+    proof_path = OUT / 'llp_reset_proof.py'
+    spec = importlib.util.spec_from_file_location('llp_reset_proof', proof_path)
+    proof_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(proof_module)
+    reset_proof = proof_module.prove(OUT)
     return dict(registers=3, reference='FDRE', initial=0, clock=rows[0][4], reset=rows[0][5],
+                reset_proof=reset_proof,
                 scope='One CSI-video clock domain;synchronous common reset;functional admission order separately gated')
 
 

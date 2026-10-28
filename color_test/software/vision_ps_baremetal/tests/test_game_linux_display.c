@@ -857,6 +857,25 @@ static void continuous_checks(void)
     CHECK(game_display_stop(&display,100)==GAME_DISPLAY_OK && f.releases==1 && game_display_owner_can_exit(&display));
     printf("PASS continuous safety: %u checks;three stores,ordered handoff,no timing restart,timeout retains;fake only\n",checks);
 }
+static void live_session_contract(void)
+{
+    GameLinuxLiveSession session={0};
+    GameDisplayPlatform platform={0};
+    CHECK(game_linux_live_session_can_exit(&session));
+#if defined(__linux__) && defined(__arm__)
+    /* The ARM path is admitted only by the protected live qualifier. */
+    CHECK(game_linux_live_session_open(&session)!=GAME_DISPLAY_OK || session.impl!=NULL);
+    if (session.impl) {
+        CHECK(game_linux_live_session_platform(&session,GAME_LINUX_LIVE_DISPLAY,&platform)==GAME_DISPLAY_OK);
+        CHECK(game_linux_live_session_close(&session)!=GAME_DISPLAY_OK || game_linux_live_session_can_exit(&session));
+    }
+#else
+    CHECK(game_linux_live_session_open(&session)==GAME_DISPLAY_UNQUALIFIED);
+    CHECK(game_linux_live_session_platform(&session,GAME_LINUX_LIVE_DISPLAY,&platform)==GAME_DISPLAY_UNQUALIFIED);
+#endif
+    CHECK(game_linux_live_session_can_exit(&session));
+    printf("PASS live session ABI contract: shared lease API guarded; host device access=0\n");
+}
 int main(int argc,char **argv)
 {
 #if defined(__linux__) && defined(GAME_DISPLAY_NATIVE_RESOURCES_TEST)
@@ -874,7 +893,7 @@ int main(int argc,char **argv)
     if (argc!=1) {
         fputs("usage: test_game_linux_display [--assets DIR --output DIR]\n",stderr); return 2;
     }
-    modes(); pixels_and_order(); failures(); lifecycle(); stopped_update_checks(); snapshot();
+    modes(); pixels_and_order(); failures(); lifecycle(); stopped_update_checks(); snapshot(); live_session_contract();
     printf("PASS Linux display fake platform: %u checks; no hardware/panel qualification\n",checks);
     return 0;
 }

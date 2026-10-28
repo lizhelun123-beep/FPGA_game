@@ -93,6 +93,17 @@ typedef struct {
     uint32_t last_control, last_status;
 } GameLinuxDisplay;
 
+/* One Linux ownership lease shared by the display and capture roles. Each
+ * role still receives an independent xlnk allocation and resource context;
+ * closing the session is allowed only after both role owners have released
+ * their mappings and confirmed DMA stopped. The opaque handle is heap-backed
+ * so this ABI does not expose Linux fd/MMIO details to the game layer. */
+typedef struct { void *impl; } GameLinuxLiveSession;
+typedef enum {
+    GAME_LINUX_LIVE_DISPLAY = 1,
+    GAME_LINUX_LIVE_CAPTURE = 2
+} GameLinuxLiveRole;
+
 GameDisplayStatus game_display_mode_valid(const GameDisplayMode *mode);
 void game_display_control_720p_mode(GameDisplayMode *mode);
 /* Strict test-file reader: 54-byte BI_RGB header, positive 1280x720, BGR24.
@@ -146,5 +157,11 @@ int game_display_owner_can_exit(const GameLinuxDisplay *display);
  * Any uncertain allocation/free retains the lease; no global reset/force flag. */
 GameDisplayStatus game_display_linux_preflight(void);
 void game_display_linux_platform(GameDisplayPlatform *platform);
+
+GameDisplayStatus game_linux_live_session_open(GameLinuxLiveSession *session);
+GameDisplayStatus game_linux_live_session_platform(GameLinuxLiveSession *session,
+    GameLinuxLiveRole role, GameDisplayPlatform *platform);
+GameDisplayStatus game_linux_live_session_close(GameLinuxLiveSession *session);
+int game_linux_live_session_can_exit(const GameLinuxLiveSession *session);
 
 #endif

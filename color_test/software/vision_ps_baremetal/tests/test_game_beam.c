@@ -33,7 +33,7 @@ int main(void)
 {
     GameBeam beam;
     GameBeamConfig config={GAME_BEAM_CONFIG_VERSION,1280,720,
-                           {32,360},{1,0},250,VISION_STABILITY_A,0,0,0,0};
+                           {32,360},{1,0},250,VISION_STABILITY_A,0,0,0,0,250};
     VisionDetection target=detection(VISION_TARGET,100,360,1,0,30,30);
     VisionDetection mirror=detection(VISION_MIRROR,300,360,0,1,46,25);
     VisionDetection portals[2]={
@@ -130,6 +130,39 @@ int main(void)
     assert(game_beam_submit(&beam,&f,0,271)==GAME_BEAM_STALE);
     config.max_age_ms=251;
     assert(game_beam_init(&beam,&config,12,1)==GAME_BEAM_BAD_CONFIG);
+    /* Six raw candidates can only contain a duplicate/invalid identity among
+     * the five physical classes.  Treat it as nonfatal scene ambiguity and
+     * retain the previous complete authority snapshot. */
+    {
+        VisionDetection ambiguous[7];
+        GameBeamSnapshot shown;
+        config.max_age_ms=0;
+        config.display_timeout_ms=6000;
+        config.display_dropout_ms=250;
+        ambiguous[0]=detection(VISION_MIRROR,200,200,1,0,80,20);
+        ambiguous[1]=detection(VISION_PORTAL_A,350,200,1,0,120,30);
+        ambiguous[2]=detection(VISION_PORTAL_B,550,200,1,0,120,30);
+        ambiguous[3]=detection(VISION_TARGET,750,200,1,0,30,30);
+        ambiguous[4]=detection(VISION_WALL,950,200,1,0,120,30);
+        ambiguous[5]=detection(VISION_PORTAL_B,550,400,1,0,120,30);
+        ambiguous[6]=detection(VISION_PORTAL_A,350,400,1,0,120,30);
+        assert(game_beam_init(&beam,&config,13,1)==GAME_BEAM_OK);
+        f=frame(NULL,0,13,1,10);
+        assert(game_beam_submit(&beam,&f,0,11)==GAME_BEAM_OK);
+        /* Seven raw candidates are still within the detector's observation
+         * capacity; the duplicate identities make the scene ambiguous and
+         * must remain nonfatal to display/scanout. */
+        f=frame(ambiguous,7,13,2,20);
+        assert(game_beam_submit(&beam,&f,0,21)==GAME_BEAM_INVALID_GEOMETRY);
+        assert(!game_beam_snapshot(&beam)->valid);
+        assert(game_beam_display_snapshot(&beam,21,&shown));
+        assert(shown.display_stale && shown.sequence==1 && shown.captured_ms==10);
+        assert(!game_beam_display_snapshot(&beam,60010,&shown));
+        assert(game_beam_retained_snapshot(&beam,&shown));
+        assert(shown.display_stale && !shown.valid && !shown.ray.success && shown.ray.segment_count>0);
+        assert(shown.sequence==1 && shown.captured_ms==10);
+        assert(!game_beam_snapshot(&beam)->valid && !game_beam_snapshot(&beam)->ray.segment_count);
+    }
     puts("game beam checks passed");
     return 0;
 }

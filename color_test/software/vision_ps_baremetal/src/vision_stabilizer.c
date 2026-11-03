@@ -629,6 +629,17 @@ int vision_stabilizer_update_timed(VisionTimedStabilizer *stabilizer,
                                    VisionDetection *output, int capacity,
                                    VisionTimedStatus *status)
 {
+    return vision_stabilizer_update_timed_gap(stabilizer,raw,count,captured_ms,
+               algorithm,output,capacity,status,TIMED_SUPPORT_GAP_MS);
+}
+
+int vision_stabilizer_update_timed_gap(VisionTimedStabilizer *stabilizer,
+                                   const VisionDetection *raw, int count,
+                                   uint64_t captured_ms, int algorithm,
+                                   VisionDetection *output, int capacity,
+                                   VisionTimedStatus *status,
+                                   unsigned support_gap_ms)
+{
     VisionDetection copy[VISION_MAX_DETECTIONS];
     int slot, output_count = 0;
     if (!status) return -1;
@@ -637,6 +648,7 @@ int vision_stabilizer_update_timed(VisionTimedStabilizer *stabilizer,
     if (!stabilizer || count < 0 || count > VISION_MAX_DETECTIONS ||
         (count && !raw) || !output || capacity < VISION_STABILIZER_TRACK_COUNT ||
         capacity > VISION_MAX_DETECTIONS ||
+        (support_gap_ms != 250U && support_gap_ms != 350U && support_gap_ms != 500U) ||
         (algorithm != VISION_STABILITY_A && algorithm != VISION_STABILITY_B))
         return -1;
     if (stabilizer->have_capture && captured_ms <= stabilizer->last_capture_ms)
@@ -657,7 +669,7 @@ int vision_stabilizer_update_timed(VisionTimedStabilizer *stabilizer,
         int selected = timed_unique(copy, count, (VisionType)slot);
         VisionDetection current;
         if (timing->have_observation &&
-            captured_ms-timing->observed_ms > TIMED_SUPPORT_GAP_MS) {
+            captured_ms-timing->observed_ms > support_gap_ms) {
             memset(track, 0, sizeof(*track));
             memset(timing, 0, sizeof(*timing));
             commits = 0;

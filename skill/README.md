@@ -1,28 +1,42 @@
-# 工程技能说明
+# PYNQ 与裸板工程技能包
 
-这些技能服务于 [最终方案](../pc_vision/FINAL_PLAN.md)：板端摄像头精确定位、固定关卡光源驱动的动态光路，以及实景叠加/电脑 Godot 游戏两种呈现。统一 1280×720，复用现有检测、C 会话、光路和配置。它们是按问题使用的工程指引。
+供智能体按任务选用的 8 项技能。入口只保留决策规则，详细接口和示例按需读取；不依赖原摄像头题目、板卡地址或聊天记录。
 
-## 选择技能
-
-| 技能 | 只在以下问题出现时使用 | 输出 |
+| 技能 | 适用任务 | 必要输入 / 失败边界 |
 | --- | --- | --- |
-| [ray-game-integration](ray-game-integration/SKILL.md) | 固定光源契约、Portal 多标签姿态、有效边界、防抖或 Godot 正式会话桥接 | 当前接口改动、最小验证与未覆盖范围 |
-| [xilinx-project-flow](xilinx-project-flow/SKILL.md) | Vivado/Vitis/XSCT、XSA/BIT/XDC、BD/IP、PS/Linux 或工具链阶段路由 | 阶段选择、现有入口、同源制品和最小下一步 |
-| [pynq-dma-contract](pynq-dma-contract/SKILL.md) | capture/display 缓冲、stride、cache、所有权、DMA 停止或复用不清楚 | 一份短契约结论和最小修复/验证动作 |
-| [stream-perf-analysis](stream-perf-analysis/SKILL.md) | 需要判断实时帧率、处理延迟、新鲜度或遮挡保持期 | 一个主导瓶颈、已有数据和下一步 |
-| [fpga-verification-gates](fpga-verification-gates/SKILL.md) | PL/RTL、AXI、Bayer、时序/CDC 或制品同源性直接阻塞闭环 | 只覆盖当前改动的最小验证结论 |
+| [pynq-overlay-control](pynq-overlay-control/SKILL.md) | Overlay、MMIO、GPIO 和 register_map | 配对 BIT/HWH、目标版本；静态元数据不证明同源或可下载 |
+| [pynq-dma-contract](pynq-dma-contract/SKILL.md) | DMA/VDMA 布局、cache、交接与释放 | 格式/stride/span、所有权；未知完成条件不能判定退休 |
+| [pynq-c-runtime](pynq-c-runtime/SKILL.md) | Python/Jupyter 调用 C/C++ | 头文件、ABI、sysroot、数据寿命；不直接运行裸板 ELF |
+| [baremetal-runtime](baremetal-runtime/SKILL.md) | Standalone 入口、计时、UART 与恢复 | BSP/链接脚本、时钟、设备契约；不套 Linux 服务流程 |
+| [xilinx-project-flow](xilinx-project-flow/SKILL.md) | 软件/PL 构建阶段与制品交接 | 器件、工具、来源；不自动重建 PL 或写卡 |
+| [fpga-verification-gates](fpga-verification-gates/SKILL.md) | AXI、图像、复位与时序反例 | 实际配置与可证伪条件；区分模型/仿真/实测 |
+| [stream-perf-analysis](stream-perf-analysis/SKILL.md) | 已有日志的吞吐、延迟、新鲜度 | 同时钟/启动窗口；不能从 UI FPS 推识别速度 |
+| [ray-game-integration](ray-game-integration/SKILL.md) | 姿态、求解与呈现一致性 | 身份、坐标、有效边界；显示保持不充当新观测 |
 
-默认先读 `AGENTS.md`、最终方案相关段落、`PROJECT_STATE.md` 当前摘要和目标源码。实际涉及 Vivado/Vitis/PS/板端工具链阶段时才读 `xilinx-project-flow`；纯电脑呈现或离线定位不进入硬件流程。按当前问题补充专门技能，不加载全部目录、模板、历史报告或日志。
+## 使用
 
-## 共同规则
+把需要的单项文件夹放入所用工具的技能目录，或直接将其 SKILL.md 作为任务说明。每项只引用自身目录内资料，可单独携带。不要把整个技能包全文加入提示词，也不要自动串联全部技能。
 
-- 只回答当前问题；优先静态检查、host 回放和 ARM 编译，再考虑板端或 Vivado。
-- 现有证据可以直接引用路径和结论。除非用户要求或新证据确实需要，不新建 REVIEW、审计、总结、交接或重复 JSON 报告。
-- 板端连接、下载/复位/烧录、SD 写入、服务改动和完整 Vivado 构建仍需当前任务明确授权；技能说明本身不构成授权。
-- 明确区分离线、host、ARM 和真实板端结果，不把模拟画面或旧制品写成实时摄像头或完整游戏通过。
-- 输出优先包含：改动/结论、验证或证据、未覆盖范围、最小下一步。分析日志本身不改阈值；用户要求实现防抖时，可在唯一配置中按同一录像的 A/B 比较调整算法，不能借此放宽新鲜度、CRC 或所有权门限。
-- 改写或清理旧版前保存包含实际待移除内容的 Git 提交；本次修改前说明已归档至 `codex/archive-pynq-guidance-20261026`（`5da71ab`）。PYNQ 的采集与 DMA 仍保留，旧版“实体 SOURCE 必检、PC 仅参考、PYNQ 全虚拟画面”的目标以最终方案为准。
+例：`使用 $pynq-overlay-control，检查给定 BIT/HWH 的 accel_0，先做离线核对。`
+脚本命令以对应技能目录为工作目录；先用 `--help`，需要修改脚本时才阅读源码。
 
-## 现有脚本
+主机自检仅需 Python 3.8+ 标准库，无 PYNQ、网络或设备依赖：
 
-`stream-perf-analysis` 下的脚本可对已有 JSONL 做只读计算。只有用户明确要求性能分析时才运行；脚本输出直接留在终端即可，不要求另存报告。
+```text
+python -B skill/scripts/verify_package.py skill
+python -B skill/scripts/measure_context.py skill
+```
+
+Overlay 元数据、DMA 布局与累计日志脚本含可重复正反例。检查通过只覆盖其声明范围；算法、RTL、目标 ABI 和硬件操作仍按项目要求验证。更换板卡/题目时替换格式、地址、版本、时钟和产品规则，不照抄示例参数。
+
+## 参考与提交
+
+[案例比较](references/source-patterns.md)记录 6 个公开 Skill 的可用设计及取舍；[场景检查](references/usage-cases.md)提供路由/迁移用例；[提交对应](references/submission-requirements.md)说明材料范围。上述资料供评审或维护使用，普通任务不必加载。
+
+从仓库根生成独立包（目标必须是新目录）：
+
+```text
+python -B skill/scripts/package_skill.py --destination output/build/game_app/skill_submission_20261101
+```
+
+ZIP 含根说明、`skill/`、文件哈希、入口体积和离线验证结果。原工程参数/历史证据、构建输出、venv、缓存和固件不进入提交包。完整工程源码、设计报告及协作记录另按提交要求组织。

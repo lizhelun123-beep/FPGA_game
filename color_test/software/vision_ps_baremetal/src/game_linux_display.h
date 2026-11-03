@@ -88,6 +88,9 @@ typedef struct {
     size_t span;
     size_t frame_span;
     unsigned frame_count, current_slot, submitted, fresh_frame_events;
+    unsigned pending_slot, retire_phase, retire_events, retire_timeout_ms;
+    uint64_t retire_started_ms, retire_previous_ms;
+    int update_pending;
     uint32_t last_park;
     int armed, configured, owner_active, allocation_owned;
     uint32_t last_control, last_status;
@@ -132,6 +135,18 @@ GameDisplayStatus game_display_status(GameLinuxDisplay *display);
  * Qualification/lease/allocation remain owned; uncertain halt never copies. */
 GameDisplayStatus game_display_update(GameLinuxDisplay *display,
     const VisionCanvas *rendered, unsigned timeout_ms);
+/* Three-store queue copies+flushes the complete CPU frame before returning.
+ * poll must keep servicing the SAME two fresh START retirement fence; BUSY
+ * forbids another queue or store reuse. The caller may do disjoint CPU/capture
+ * work between polls. Any error retains all stores until actual HALTED stop. */
+GameDisplayStatus game_display_submit(GameLinuxDisplay *display,
+    const VisionCanvas *rendered, unsigned timeout_ms);
+GameDisplayStatus game_display_poll(GameLinuxDisplay *display);
+/* Recover only the software retirement observer after a transient poll/read
+ * failure while MM2S is still physically RUNNING with no error bits.  Never
+ * halts, resets, reconfigures, releases or rewrites a frame store.  A pending
+ * store restarts the same two-fresh-START retirement proof before reuse. */
+GameDisplayStatus game_display_resume_scanout(GameLinuxDisplay *display);
 /* Bounded observation, no game ticks/input/render. Caller prints READY only
  * after successful start. 1..30000 ms; always calls stop, including errors. */
 GameDisplayStatus game_display_observe(GameLinuxDisplay *display, unsigned duration_ms,

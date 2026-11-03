@@ -291,12 +291,19 @@ static int park_writer(unsigned writer)
     Xil_Out32(CAP+0x30U,0x00011001U); barrier();
     return 0;
 }
-static int fence(unsigned writer,unsigned required,uint64_t *lower_bound)
+static int fence(unsigned writer,unsigned required,uint64_t *lower_bound,GameLinuxDisplay *display,void (*service_uart)(void))
 {
     uint64_t start=game_baremetal_now_ms(),lower=0,first=0,sampled;
     unsigned i,phase=0,count=0;
     for (i=0; i<=2000U; ++i) {
         uint32_t control,status,park;
+        if (display) {
+            GameDisplayStatus ds=game_display_poll(display);
+            if (ds!=GAME_DISPLAY_OK && ds!=GAME_DISPLAY_BUSY) {
+                game_baremetal_first_fault("display_retirement"); return -1;
+            }
+        }
+        if (service_uart) service_uart();
         sampled=game_baremetal_now_ms(); /* BEFORE reading the START event. */
         control=Xil_In32(CAP+0x30U); status=Xil_In32(CAP+0x34U); park=Xil_In32(CAP+0x28U);
         if ((control&0x00ff101fU)!=0x11001U || (status&(ERRORS|HALTED)) ||
@@ -348,23 +355,23 @@ int game_baremetal_capture_start(void)
         (unsigned long)Xil_In32(CAP+0x28U));
     owner.capture_phase=2;
     owner.writer=(Xil_In32(CAP+0x28U)>>24)&31U;
-    if (owner.writer>=3U || park_writer(owner.writer) || fence(owner.writer,2,NULL) || health(720U)) return -1;
+    if (owner.writer>=3U || park_writer(owner.writer) || fence(owner.writer,2,NULL,NULL,NULL) || health(720U)) return -1;
     printf("BEAM_CAPTURE_PARKED_OK writer=%u cr=%08lx sr=%08lx\r\n",owner.writer,
         (unsigned long)Xil_In32(CAP+0x30U),(unsigned long)Xil_In32(CAP+0x34U));
     owner.warmed=1;
     owner.capture_phase=3;
     return 0;
 }
-int game_baremetal_capture_copy(uint8_t *cpu,size_t capacity,GameCaptureStamp *stamp)
+int game_baremetal_capture_copy(uint8_t *cpu,size_t capacity,GameCaptureStamp *stamp,GameLinuxDisplay *display,void (*service_uart)(void))
 {
     unsigned row,slot,next;
     uint64_t captured;
     uintptr_t dst=(uintptr_t)cpu,src=(uintptr_t)capture_pixels;
     if (!owner.warmed || !cpu || capacity!=3840U*720U || !stamp ||
         capacity>UINTPTR_MAX-dst || (dst<src+sizeof capture_pixels && src<dst+capacity)) return -1;
-    if (game_baremetal_capture_check() || fence(owner.writer,1,&captured)) return -1;
+    if (game_baremetal_capture_check() || fence(owner.writer,1,&captured,display,service_uart)) return -1;
     slot=owner.writer; next=(slot+1U)%3U;
-    if (park_writer(next) || fence(next,2,NULL)) return -1;
+    if (park_writer(next) || fence(next,2,NULL,display,service_uart)) return -1;
     owner.writer=next;
     if (health(720U) || parked(slot)) return -1;
     /* Invalidate ONLY the excluded store. Never flush dirty CPU data over a

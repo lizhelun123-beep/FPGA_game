@@ -268,6 +268,41 @@ GameDisplayStatus game_display_status(GameLinuxDisplay *d)
     return GAME_DISPLAY_OK;
 }
 
+GameDisplayStatus game_display_resume_scanout(GameLinuxDisplay *d)
+{
+    GameDisplayPlatform *p;
+    GameDisplayStatus s;
+    uint32_t park;
+    uint64_t now;
+    if (!d) return GAME_DISPLAY_BAD_ARGUMENT;
+    if (d->state==GAME_DISPLAY_SCANNING) return game_display_status(d);
+    if (d->state!=GAME_DISPLAY_RETAINED || !d->owner_active ||
+        !d->allocation_owned || !d->buffer || !d->armed || !d->configured)
+        return GAME_DISPLAY_BAD_STATE;
+    /* Temporarily admit the read-only health check.  Restore RETAINED on any
+     * uncertainty; no stop/reset/release is an implicit recovery action. */
+    d->state=GAME_DISPLAY_SCANNING;
+    s=game_display_status(d);
+    if (s!=GAME_DISPLAY_OK) { d->state=GAME_DISPLAY_RETAINED; return s; }
+    if (!d->update_pending) return GAME_DISPLAY_OK;
+    p=&d->platform;
+    if (p->read(p->context,PARK,&park) ||
+        (park&31U)!=d->pending_slot ||
+        p->write(p->context,SR,FRAME_EVENT) ||
+        p->barrier(p->context) || p->now_ms(p->context,&now)) {
+        d->state=GAME_DISPLAY_RETAINED;
+        return GAME_DISPLAY_IO;
+    }
+    d->last_park=park;
+    d->retire_started_ms=d->retire_previous_ms=now;
+    /* Restart exactly like a fresh queued store.  The current frame reader may
+     * still report the previously active store until its next START; phase 0
+     * permits that transition, then requires the normal two fresh events. */
+    d->retire_phase=0;
+    d->retire_events=0;
+    return GAME_DISPLAY_OK;
+}
+
 static GameDisplayStatus halt_and_finish(GameLinuxDisplay *d, unsigned timeout)
 {
     GameDisplayPlatform *p;
@@ -299,37 +334,58 @@ static GameDisplayStatus halt_and_finish(GameLinuxDisplay *d, unsigned timeout)
  * deliberately stronger than a PARK write/readback or a stale IRQ flag.
  * PYNQ MM2S uses frame-count pacing and rotating frame stores;no reset/error
  * clearing is borrowed. CPU writes resume only after this retirement fence. */
-static GameDisplayStatus retire_to(GameLinuxDisplay *d,unsigned target,unsigned timeout)
+static GameDisplayStatus poll_retirement(GameLinuxDisplay *d)
 {
     GameDisplayPlatform *p=&d->platform;
     GameDisplayStatus s;
-    uint64_t start,now,previous;
+    uint64_t now;
     uint32_t park;
-    unsigned i,phase=0,events=0;
-    if (p->now_ms(p->context,&start)) return GAME_DISPLAY_IO;
-    previous=start;
-    for (i=0;i<=timeout;++i) {
-        s=game_display_status(d); if (s!=GAME_DISPLAY_OK) return s;
-        if (p->read(p->context,PARK,&park)) return GAME_DISPLAY_IO;
-        d->last_park=park;
-        if ((park&31U)!=target) return GAME_DISPLAY_BAD_STATE;
-        if (((park>>16)&31U)==target) {
-            if (!phase || (phase==1 && (d->last_status&FRAME_EVENT))) {
-                if (p->write(p->context,SR,FRAME_EVENT) || p->barrier(p->context)) return GAME_DISPLAY_IO;
-                phase=1;
-            } else if (phase==1) phase=2; /* observed W1C low before re-arm */
-            else if (d->last_status&FRAME_EVENT) {
-                ++events; ++d->fresh_frame_events;
-                if (events==2) { d->current_slot=target; return GAME_DISPLAY_OK; }
-                if (p->write(p->context,SR,FRAME_EVENT) || p->barrier(p->context)) return GAME_DISPLAY_IO;
-                phase=1;
+    if (p->now_ms(p->context,&now) || now<d->retire_previous_ms) return GAME_DISPLAY_IO;
+    d->retire_previous_ms=now;
+    if (now-d->retire_started_ms>=d->retire_timeout_ms) return GAME_DISPLAY_TIMEOUT;
+    s=game_display_status(d); if (s!=GAME_DISPLAY_OK) return s;
+    if (p->read(p->context,PARK,&park)) return GAME_DISPLAY_IO;
+    d->last_park=park;
+    if ((park&31U)!=d->pending_slot) return GAME_DISPLAY_BAD_STATE;
+    if (((park>>16)&31U)==d->pending_slot) {
+        if (!d->retire_phase || (d->retire_phase==1 && (d->last_status&FRAME_EVENT))) {
+            if (p->write(p->context,SR,FRAME_EVENT) || p->barrier(p->context)) return GAME_DISPLAY_IO;
+            d->retire_phase=1;
+        } else if (d->retire_phase==1) d->retire_phase=2;
+        else if (d->last_status&FRAME_EVENT) {
+            ++d->retire_events; ++d->fresh_frame_events;
+            if (d->retire_events==2) {
+                d->current_slot=d->pending_slot; d->update_pending=0;
+                return GAME_DISPLAY_OK;
             }
-        } else if (phase) return GAME_DISPLAY_BAD_STATE;
-        if (p->now_ms(p->context,&now) || now<previous) return GAME_DISPLAY_IO;
-        previous=now;
-        if (now-start>=timeout || i==timeout) break;
-        if (p->wait_ms(p->context,1)) return GAME_DISPLAY_IO;
+            if (p->write(p->context,SR,FRAME_EVENT) || p->barrier(p->context)) return GAME_DISPLAY_IO;
+            d->retire_phase=1;
+        }
+    } else if (d->retire_phase) return GAME_DISPLAY_BAD_STATE;
+    return GAME_DISPLAY_BUSY;
+}
+GameDisplayStatus game_display_poll(GameLinuxDisplay *d)
+{
+    GameDisplayStatus s;
+    if (!d) return GAME_DISPLAY_BAD_ARGUMENT;
+    if (d->state!=GAME_DISPLAY_SCANNING) return GAME_DISPLAY_BAD_STATE;
+    if (!d->update_pending) return game_display_status(d);
+    s=poll_retirement(d);
+    if (s!=GAME_DISPLAY_OK && s!=GAME_DISPLAY_BUSY) d->state=GAME_DISPLAY_RETAINED;
+    return s;
+}
+static GameDisplayStatus wait_retirement(GameLinuxDisplay *d)
+{
+    GameDisplayStatus s;
+    unsigned i;
+    for (i=0;i<=d->retire_timeout_ms;++i) {
+        s=game_display_poll(d);
+        if (s!=GAME_DISPLAY_BUSY) return s;
+        if (d->platform.wait_ms(d->platform.context,1)) {
+            d->state=GAME_DISPLAY_RETAINED; return GAME_DISPLAY_IO;
+        }
     }
+    d->state=GAME_DISPLAY_RETAINED;
     return GAME_DISPLAY_TIMEOUT;
 }
 static GameDisplayStatus continuous_update(GameLinuxDisplay *d,const VisionCanvas *source,unsigned timeout)
@@ -343,14 +399,36 @@ static GameDisplayStatus continuous_update(GameLinuxDisplay *d,const VisionCanva
     if (p->read(p->context,PARK,&park)) return GAME_DISPLAY_IO;
     if ((park&31U)!=d->current_slot || ((park>>16)&31U)!=d->current_slot)
         return GAME_DISPLAY_BAD_STATE;
-    memset(dst,0,d->frame_span);
+    /* Padding was initialized at prepare; every active byte is replaced.
+     * Re-clearing the entire4MiB store adds traffic without changing pixels. */
     for (y=0;y<d->mode.height;++y)
         memcpy(dst+(size_t)y*d->mode.stride,source->data+(size_t)y*source->stride,GAME_DISPLAY_HSIZE);
     if (p->flush(p->context,dst,d->physical+(size_t)slot*d->frame_span,d->frame_span) ||
         p->barrier(p->context)) return GAME_DISPLAY_IO;
     if (p->write(p->context,PARK,(park&~31U)|slot) || p->barrier(p->context)) return GAME_DISPLAY_IO;
     ++d->submitted;
-    return retire_to(d,slot,timeout);
+    d->pending_slot=slot; d->retire_phase=d->retire_events=0;
+    d->retire_timeout_ms=timeout;
+    if (p->now_ms(p->context,&d->retire_started_ms)) return GAME_DISPLAY_IO;
+    d->retire_previous_ms=d->retire_started_ms; d->update_pending=1;
+    return GAME_DISPLAY_OK;
+}
+
+GameDisplayStatus game_display_submit(GameLinuxDisplay *d,const VisionCanvas *source,unsigned timeout)
+{
+    GameDisplayStatus s;
+    uintptr_t a,b;
+    if (!d || !source || !timeout || timeout>1000) return GAME_DISPLAY_BAD_ARGUMENT;
+    if (d->state!=GAME_DISPLAY_SCANNING || d->frame_count!=3) return GAME_DISPLAY_BAD_STATE;
+    if (d->update_pending) return GAME_DISPLAY_BUSY;
+    if (!vision_canvas_valid(source) || source->width!=(int)d->mode.width ||
+        source->height!=(int)d->mode.height) return GAME_DISPLAY_BAD_ARGUMENT;
+    a=(uintptr_t)source->data; b=(uintptr_t)d->buffer;
+    if (!b || source->capacity>UINTPTR_MAX-a || d->span>UINTPTR_MAX-b ||
+        (a<b+d->span && b<a+source->capacity)) return GAME_DISPLAY_BAD_ARGUMENT;
+    s=continuous_update(d,source,timeout);
+    if (s!=GAME_DISPLAY_OK) d->state=GAME_DISPLAY_RETAINED;
+    return s;
 }
 
 GameDisplayStatus game_display_update(GameLinuxDisplay *d,const VisionCanvas *source,unsigned timeout)
@@ -366,9 +444,8 @@ GameDisplayStatus game_display_update(GameLinuxDisplay *d,const VisionCanvas *so
     if (!b || source->capacity>UINTPTR_MAX-a || d->span>UINTPTR_MAX-b ||
         (a<b+d->span && b<a+source->capacity)) return GAME_DISPLAY_BAD_ARGUMENT;
     if (d->frame_count==3) {
-        s=continuous_update(d,source,timeout);
-        if (s!=GAME_DISPLAY_OK) d->state=GAME_DISPLAY_RETAINED;
-        return s;
+        s=game_display_submit(d,source,timeout);
+        return s==GAME_DISPLAY_OK ? wait_retirement(d) : s;
     }
     s=game_display_status(d);
     if (s!=GAME_DISPLAY_OK) return s;
@@ -399,6 +476,7 @@ GameDisplayStatus game_display_stop(GameLinuxDisplay *d,unsigned timeout)
     if (p->close(p->context)) return GAME_DISPLAY_IO;
     d->owner_active=0;
     d->span=0;
+    d->update_pending=0;
     d->state=GAME_DISPLAY_EMPTY;
     return GAME_DISPLAY_OK;
 }

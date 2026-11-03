@@ -1,6 +1,7 @@
 """Focused configuration contract checks; no images, compiler or devices."""
 import copy
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 
@@ -37,6 +38,44 @@ def configuration():
 
 
 class LogicalEmitterConfigTest(unittest.TestCase):
+    def test_beam_support_gap_is_explicit_and_scoped(self):
+        config = json.loads((MODULE.ROOT/'pc_vision/game_config.json').read_text(encoding='utf-8'))
+        beam = config['real_scene']['beam']
+        self.assertEqual(beam['stability_support_gap_ms'], 350)
+        text = MODULE.generate_beam(config)
+        self.assertRegex(text, r',350\n};\n$')
+        del beam['stability_support_gap_ms']
+        self.assertRegex(MODULE.generate_beam(config), r',250\n};\n$')
+        for value in (0, 249, 351, 500, True, '350'):
+            beam['stability_support_gap_ms'] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                MODULE.generate_beam(config)
+
+    def test_game_portal_exit_policy_defaults_and_rejects_invalid_values(self):
+        config = configuration()
+        self.assertIn('.portal_b_exit_side = 0,', MODULE.generate(config))
+        for side in (-1, 0, 1):
+            config['board_game']['portal_b_exit_side'] = side
+            self.assertIn(f'.portal_b_exit_side = {side},', MODULE.generate(config))
+        for side in (-2, 2, True, '1'):
+            config['board_game']['portal_b_exit_side'] = side
+            with self.assertRaises(ValueError):
+                MODULE.generate(config)
+
+    def test_pynq_support_gap_500_does_not_change_baremetal_or_scene_age(self):
+        config = json.loads((MODULE.ROOT/'pc_vision/game_config.json').read_text(encoding='utf-8'))
+        beam = config['real_scene']['beam']
+        self.assertEqual(beam['stability_support_gap_ms'], 350)
+        self.assertEqual(beam['pynq_stability_support_gap_ms'], 500)
+        self.assertRegex(MODULE.generate_beam(config), r',350\n};\n$')
+        text = MODULE.generate_beam(config, 600, beam['pynq_stability_support_gap_ms'])
+        self.assertIn(',600,VISION_STABILITY_B,', text)
+        self.assertRegex(text, r',500\n};\n$')
+        self.assertEqual(config['board_game']['scene_max_age_ms'], 600)
+        for value in (0, 499, 501, 600, True, '500', 500.0):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                MODULE.generate_beam(config, 600, value)
+
     def test_emits_level_data_and_physical_count(self):
         text = MODULE.generate(configuration())
         self.assertIn('.reference = "sample_photo(1)/001.png"', text)

@@ -51,6 +51,7 @@ static int valid_config(const GameConfig *config)
         !isfinite(config->height) || config->width <= 0 || config->height <= 0 ||
         !isfinite(config->physics_scale) || config->physics_scale < 1 ||
         config->physics_scale > 10000 ||
+        config->portal_b_exit_side < -1 || config->portal_b_exit_side > 1 ||
         !isfinite(config->width*config->physics_scale) ||
         !isfinite(config->height*config->physics_scale) ||
         config->max_models < 1 || config->max_models > GAME_MAX_MODELS ||
@@ -188,17 +189,28 @@ GameStatus game_session_select(GameSession *session, unsigned int level_id,
     return GAME_OK;
 }
 
-GameStatus game_session_start(GameSession *session, uint64_t now_ms)
+static GameStatus start_session(GameSession *session, uint64_t now_ms,
+                                int board_ready)
 {
     GameStatus status = game_session_tick(session, now_ms);
     if (status != GAME_OK) return status;
     if (session->view.state != GAME_PREPARING) return GAME_BAD_STATE;
-    if (!session->view.scene_valid) return session->view.scene_status;
-    if (!session->view.ready) return GAME_NEED_UNSOLVED;
+    if (!board_ready && !session->view.scene_valid) return session->view.scene_status;
+    if (session->view.scene_valid && !session->view.ready) return GAME_NEED_UNSOLVED;
     session->started_ms = now_ms;
     session->view.state = GAME_RUNNING;
     session->view.ready = 0;
     return GAME_OK;
+}
+
+GameStatus game_session_start(GameSession *session, uint64_t now_ms)
+{
+    return start_session(session,now_ms,0);
+}
+
+GameStatus game_session_start_after_board_ready(GameSession *session, uint64_t now_ms)
+{
+    return start_session(session,now_ms,1);
 }
 
 /* Uniform scaling only, matching pc_vision/host_bridge.c. All logical poses
@@ -223,9 +235,9 @@ static int trace(const GameConfig *config, const GameLevelConfig *level,
     if (level->emitter.enabled) {
         RayPoint point = {level->emitter.point.x*scale,
                            level->emitter.point.y*scale};
-        status = ray_game_trace_from_emitter(scaled, view->object_count,
+        status = ray_game_trace_from_emitter_policy(scaled, view->object_count,
                     config->width*scale+1, config->height*scale+1,
-                    point, level->emitter.direction, &view->ray);
+                    point, level->emitter.direction, config->portal_b_exit_side, &view->ray);
     } else {
         status = ray_game_trace(scaled, view->object_count,
                     config->width*scale+1, config->height*scale+1, &view->ray);

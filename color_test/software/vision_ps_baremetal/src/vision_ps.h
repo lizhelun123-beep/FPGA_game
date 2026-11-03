@@ -8,6 +8,8 @@
 #define VISION_MAX_DETECTIONS 16
 #define VISION_PROBE_SAMPLE_COUNT 5
 #define VISION_CALIBRATION_CHANNELS 6
+#define VISION_DIAGNOSTIC_MASK_COUNT 8
+#define VISION_DIAGNOSTIC_TYPE_COUNT 6
 
 enum {
     VISION_MASK_YELLOW  = 1U << 0,
@@ -107,6 +109,21 @@ typedef struct {
     int geometry_is_effective;
 } VisionDetection;
 
+/* Per-frame counters for the restored color/marker pipeline. These are
+ * diagnostic snapshots only and do not change detector acceptance. */
+typedef struct {
+    uint32_t mask_pixels[VISION_DIAGNOSTIC_MASK_COUNT];
+    uint32_t component_candidates[VISION_DIAGNOSTIC_TYPE_COUNT];
+    uint32_t geometry_pass[VISION_DIAGNOSTIC_TYPE_COUNT];
+    uint32_t marker_pass[VISION_DIAGNOSTIC_TYPE_COUNT];
+    uint32_t accepted[VISION_DIAGNOSTIC_TYPE_COUNT];
+    uint32_t rejected_geometry[VISION_DIAGNOSTIC_TYPE_COUNT];
+    uint32_t rejected_marker[VISION_DIAGNOSTIC_TYPE_COUNT];
+    uint32_t wall_marker_components;
+    uint32_t wall_marker_pairs_tested;
+    uint32_t wall_marker_accepted;
+} VisionDetectionDiagnostics;
+
 /* Optional AprilTag backend registered by the real-scene host/ARM build.
  * The legacy six-color profile remains the default. Enabling real-scene mode
  * without its Portal backend fails instead of silently losing required tags. */
@@ -162,6 +179,11 @@ typedef struct {
 int vision_detect_bgr888(const uint8_t *frame, uint32_t width, uint32_t height,
                          uint32_t stride, VisionDetection *output,
                          int output_capacity);
+
+/* Copy counters from the most recent detector call for host/UART diagnostics. */
+void vision_get_detection_diagnostics(VisionDetectionDiagnostics *diagnostics);
+/* Internal shared counter hook for the separate green-target detector. */
+void vision_detection_diagnostics_note_target(int geometry_pass);
 
 /* Detect the five non-TARGET classes with one shared sampled HSV mask pass. */
 int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,

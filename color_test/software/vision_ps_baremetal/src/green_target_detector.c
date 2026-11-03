@@ -244,6 +244,40 @@ static void insert_detection(VisionDetection *output, int *count, int capacity,
     output[position] = *candidate;
 }
 
+static int detect_components(uint32_t width, uint32_t height,
+                              VisionDetection *output, int output_capacity)
+{
+    uint32_t grid_w=width/VISION_SAMPLE_STEP, grid_h=height/VISION_SAMPLE_STEP, y;
+    int result_count=0;
+    memset(visited, 0, grid_w*grid_h);
+    for (y=0; y<grid_w*grid_h; ++y) {
+        GreenComponent component;
+        VisionDetection detection;
+        unsigned confidence;
+        if (visited[y] || !green_mask[y]) continue;
+        collect_component(y, grid_w, grid_h, &component);
+        if (!component_is_target(&component, grid_w, width, height, &confidence)) {
+            vision_detection_diagnostics_note_target(0);
+            continue;
+        }
+        vision_detection_diagnostics_note_target(1);
+        fill_detection(&detection, &component, width, height, confidence);
+        insert_detection(output, &result_count, output_capacity, &detection);
+    }
+    return result_count;
+}
+
+int green_target_detect_mask(const uint8_t *mask, uint8_t bit, uint32_t width,
+                              uint32_t height, VisionDetection *output,
+                              int output_capacity)
+{
+    uint32_t n=(width/VISION_SAMPLE_STEP)*(height/VISION_SAMPLE_STEP), i;
+    if (!mask || !bit || !output || output_capacity<=0 || width<4 || height<4 ||
+        width>1280 || height>720) return -1;
+    for (i=0; i<n; ++i) green_mask[i]=(uint8_t)((mask[i]&bit)!=0);
+    return detect_components(width,height,output,output_capacity);
+}
+
 int green_target_detect_bgr888(const uint8_t *frame, uint32_t width,
                                uint32_t height, uint32_t stride,
                                VisionDetection *output, int output_capacity)
@@ -252,7 +286,6 @@ int green_target_detect_bgr888(const uint8_t *frame, uint32_t width,
     uint32_t grid_h;
     uint32_t grid_pixels;
     uint32_t y;
-    int result_count = 0;
 
     if (!frame || !output || output_capacity <= 0 ||
         width < VISION_SAMPLE_STEP || height < VISION_SAMPLE_STEP ||
@@ -280,16 +313,5 @@ int green_target_detect_bgr888(const uint8_t *frame, uint32_t width,
     }
     open_close(grid_w, grid_h);
 
-    for (y = 0; y < grid_pixels; ++y) {
-        GreenComponent component;
-        VisionDetection detection;
-        unsigned confidence;
-        if (visited[y] || !green_mask[y]) continue;
-        collect_component(y, grid_w, grid_h, &component);
-        if (!component_is_target(&component, grid_w, width, height, &confidence))
-            continue;
-        fill_detection(&detection, &component, width, height, confidence);
-        insert_detection(output, &result_count, output_capacity, &detection);
-    }
-    return result_count;
+    return detect_components(width,height,output,output_capacity);
 }

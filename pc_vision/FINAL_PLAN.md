@@ -1,5 +1,49 @@
 # 实景光路与电脑虚拟游戏最终方案
 
+2026-10-30电脑复杂关卡响应：用户允许降低准入门槛，`board_game.scene_max_age_ms`从350放宽为600ms，Python与同一C权威游戏的计分门限同步改变；校时质量250ms和板端B350ms保持独立。电脑将原始整帧观测适配为选中关卡的必需类别，再交由原C精确实体集合/姿态/光路检查；保留完整原始board_frame，必需实体缺失/重复、无效观测和旧会话仍拒绝。网页跳过计时消息造成的重复几何变换，新姿态/光路仍原子更新；不新增滤波、模型插值或旧姿态计分。此决定覆盖下文电脑350ms历史要求，仅改电脑源码/配置，不改本轮板端BOOT、PYNQ、DMA或协议。旧日志接收时准入候选改善不是实板FPS或端到端验收。
+
+2026-10-29 当前板端阶段：Python3.6/PYNQ单所有者已接入Overlay、MMIO/GPIO、相机参数、帧缓冲生命周期和调度，逐像素检测及原显示退休状态机继续由C执行。命令行与Jupyter共用Session；[板端入口与验证范围](../color_test/software/vision_ps_baremetal/PYNQ_BEAM.md)，[运行候选包](../output/build/game_app/pynq_beam_runtime_latest/pynq_beam_runtime.zip)。24项host测试、Python3.6语法、ARM ABI/GLIBC和独立解包校验通过。UART准入会拒绝内核console、现有占用和目标getty，C打开时使用O_NOCTTY/flock/TIOCEXCL。真实PYNQ、Overlay下载、DMA、HDMI及串口均NOT_RUN；实际运行仍须完成当前boot准入与设备确认。电脑网页/串口后台/权威游戏会话均留在电脑，不增加网络部署、App、HLS或新PL功能。
+
+2026-10-29 第一阶段记录与有效边界：只迁移原板端裸板程序到Linux/PYNQ，继续用原串口与电脑网页版交互；电脑Web服务、C游戏会话和呈现不搬到板上，也不要求板卡联网。第一步生成ARM Linux板端C算法库及Python3.6兼容入口，原检测/B/Portal/v3/保持逻辑复用；当时尚未绑定真实PYNQ采集/显示owner，当前软件接线状态以上一段为准。本段覆盖下方“Web服务/完整游戏会话迁板”的旧建议；冻结包保持原样作为历史恢复档案。现用BOOT、BIT、JSON和电脑运行源码不变。
+
+2026-10-29 PYNQ迁移基线：用户要求保留version14板端、最新网页和唯一JSON/C核心的可恢复版本，现冻结为`pynq-migration-20261029-1`。逐项迁移清单、SHA256与恢复说明见[冻结基线](../output/build/game_app/pynq_migration_baseline_20261029_1/README.md)，快照包含选定的未提交/未跟踪源码和Git忽略的固件/BSP。本轮不改变运行逻辑、现用BOOT或部署。后续方向调整为板上PYNQ/Python/Jupyter编排与同一C权威会话，PL封装Overlay，保留Three.js网页效果；电脑只需浏览器，不增加桌面Python/Godot工程，当前网页所需共享Python后端作为板上移植输入保留。历史镜像PYNQ2.6.2/Python3.6的兼容适配未完成，不把升级镜像或更换App作为前置决定。下一步为运行环境兼容矩阵和单一会话/硬件服务接口设计，尚未授权硬件或Vivado操作。Windows恢复请用较短路径；本轮独立恢复目录为`tmp/pb1/`。
+
+2026-10-28网页/Godot同步350ms：用户要求网络上位机与Godot直接同步处理，二者继续复用同一配置/Python呈现器/C核心。当前runtime=`20261028-binary-v3-350-6`、web=`20261028-web-sync350-3`；后端快照提供scene_max_age_ms，网页catalog提供sceneMaxAgeMs，两种前端的断档提示从配置读取。350ms场景准入覆盖下文250ms历史限制，校时质量仍独立250ms；B350、协议v3、version14 BOOT和整帧保持不变。网页350/351ms边界/保留测试通过，本轮未连接真实串口、未改固件。
+
+2026-10-28 v3二进制正式实施：用户授权两端协议升级及重新生成BOOT。当前配套为version14 BOOT与PC `20261028-binary-v3-5`，Godot/网页共用单一BinaryParser/控制会话/C核心。全部控制、校时、姿态采用有长度/CRC32的COBS二进制包；原采集代次/帧号/64位时间不变，姿态再绑定PC关卡/代次/nonce。物块12字节定点坐标/尺寸和16位有向角度，误差界与包格式见[SERIAL_PROTOCOL.md](SERIAL_PROTOCOL.md)。LEVEL43字节适配FIFO，三/五物块姿态106/130字节。保留显示栅栏后READY、明确START/ACK后计时、START前无姿态、重发幂等及250ms准入，整帧显示不变。新增接收/发送校时时戳，扣除可测板端回复处理时间，不声称消除整帧轮询等待。940份真实旧日志离线量化重放无光路判定差异，最大光段坐标分量差约0.234像素。host/网页/Godot/ARM/BOOT验证通过，用户负责替换SD并上板；v13与新电脑协议不兼容，旧v2仅保留离线回放功能。
+
+2026-10-28 Portal B对齐及性能分析：PC不再默认旧配对出口，`board_game.portal_b_exit_side=1`接入同一C策略API，与板端`real_scene.beam.portal_b_exit_side=1`保持一致；只改电脑，原version13 BOOT不变。现有原始串口日志对应用户粘贴文本，零POSE2解码失败；关卡2中766帧、597板端有效、544含完整A/B/Target，仅5份板端有效姿态潜在通过PC时序准入，不能当成实际UI采用数。关卡2连续采集间隔中位266ms，采集等待/拷贝130ms、检测85ms；有效帧保守年龄中位373ms。270次SYNC中197次有效、73次超过250ms；同步只在帧/串口边界处理会把板端等待引入时钟区间。CONTROL_RX_REJECTED1038不能作为POSE损坏数，正常292字节POSE分片即可触发控制解析器192字节上限计数。建议后续先改善SYNC服务及时性和诊断统计，再采用有边界/长度/CRC的紧凑二进制协议（保留原generation/sequence/capture/publish、会话/状态/掩码；每物体量化坐标与有向角度，固定尺寸从配置协商），以及拆分采集等待/拷贝与识别优化。本轮性能只分析，不改协议/板端/新鲜度或进行硬件实测。
+
+2026-10-28电脑连续显示决定：用户要求手进入画面后虚拟物块不消失，更新期间保留旧场景直到新场景准备完成。电脑开始计时且有完整实测场景后，不再因缺失250ms、等待6s或短暂断线清空显示；原子保留上一份完整模型/光路，新通过检查的场景整体替换，切关/菜单/结束清理。模型保持亮度，STALE光路不产生命中特效；保留原始时序/来源，不把旧场景送回C，也不放宽250ms计分准入。此条覆盖此前电脑运行时的有界显示保留决定，板端保持规则不变。PC build=`20261028-continuous-scene-3`，数据到达立即唤醒、周期最长10ms，现有version13 BOOT无需重编译。
+
+2026-10-28整合交付：当前为version13 BOOT，保留version12 Portal识别修正、B350、恒亮保持及板端握手。PC改为关卡/开始/重置命令优先于周期SYNC2，并从完整串口写入完成时刻计算2秒/3次超时；排队不计时，不能用强制解锁代替匹配READY2与光源回显。新增实际TX/RX字节日志和`pc_vision/start_game.ps1`启动入口。此前COM9测试零接收，用户确认当时板卡未启动；本轮仅离线整合生成BOOT、更新上位机，通电后的实际握手仍待用户验证。
+
+2026-10-28 Portal低饱和后续：最新HDMI日志显示A多在主体几何检查前后拒绝，B/Mirror/Target已有检测；采集间隔218..260ms未超过B350。新截图回放确认低S蓝色主体破碎、局部偏色白环分裂仍会影响此前version10/11。现仅将restored蓝色候选S下限改为25，Portal局部白S65优先并在完整标记验证失败后回退原严格40；全局白/WALL、标记/几何/歧义与B保持规则不变。六张屏幕参考实际检测数5/5/3/2/4/2，均得到A/B与两段含传送光路；它们保留叠加画面，不是原始相机/实板验收。当前version12 BOOT见[Standalone说明](../color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)，仍支持选关光源握手，实际稳定性待用户上板。
+
+2026-10-28串口握手更新（历史version11，调度由上方整合版覆盖）：采用`SYNC2 → LEVEL2 → READY2 → START2 → STARTED2 → POSE2`。选关把唯一JSON中的固定发射点/方向和PC代次/随机nonce发给板卡；板端在同一个GameBeam更新光源，新实景画面提交并通过原HDMI退休栅栏后才回应READY2。上位机核对回显才解锁开始按钮；点击后等待STARTED2，启动同一C计时并接受后续真实姿态。准备期间板端继续采集和绘制，但POSE2门控关闭；READY只表示光源已应用，物体齐全与通关仍需开始后的有效新鲜观测。C原始直接开始接口保持旧准备规则，串口部署使用明确的已握手开始入口。PC代次与相机原generation分开，原seq/time保持；重发幂等、旧会话拒绝、有限超时重试、重连计时继续。version11配套BOOT见[Standalone说明](../color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。当前只同步光源/姿态，板端仍为诊断光路，PC负责游戏结算；若要两屏同一光段/结算，还需传回PC权威场景/结果，本次不宣称已完成。
+
+2026-10-28 Portal A/B修正（历史version10）：离线回放证明此前Portal A拒绝主要发生在局部白标记低V与主体倾斜造成的PCA中心偏差。restored Portal局部ROI采用主体相对低饱和白标记条件，接受姿态用solid→ring端点联合中点/轴；不改变全局白/WALL阈值和Portal布局门槛。四张截图分别通过5/5/3/2个实际物体检测，两张新截图均产生A/B传送光路；主机端长边入口组合测试通过。此前version10/BOOT见[Standalone说明](../color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。实际板端识别与交互仍待上板。
+
+2026-10-28最新显示决定：板端实景HDMI在新输入待确认/短暂漏检时保持最后一次确认的完整相机画面与光路，光线保持原亮度，覆盖下文该板端路径的STALE变暗与缺失画面250ms清空规则。继续显示STALE/真实旧帧龄，最多保持旧captured_ms起6s，不能作为当前有效输入或通关依据；新实测结果确认后整体替换。B350ms、持续移走250ms后提交新实测子集、电脑完整游戏250ms新鲜度及DMA契约保留。当前version9/BOOT见[Standalone说明](../color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。
+
+2026-10-28最新调整：用户明确将当前实景B防抖支持间隔改为350ms，覆盖下文250ms支持间隔不可放宽的旧决定。唯一配置`real_scene.beam.stability_support_gap_ms=350`；超过350ms重新确认，仍要求真实连续支持及原确认过程。旧timed API默认250ms；完整电脑游戏的新鲜度250ms、显示明确缺失250ms是独立规则，本次保持。当前version8/BOOT及SOURCE缺失位修正见[Standalone说明](../color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。
+
+## 2026-10-27 补充：恢复标记、串口上位机与15格选关
+
+本节覆盖下文的旧标记、三关菜单与部署规划。板端继续使用当前 Standalone/core0 的同一 `vision_ps` restored profile：黄色 Mirror+黑端点，蓝/橙 Portal+白色实心点/圆环，WALL 两端白条，绿色圆 Target。Portal 轴为 solid→ring；Mirror/Wall 的轴按180°等价。电脑串口模式接收板端已确认的中心/轴，不再次识别标签或叠加第二次姿态平滑，也不读取相机原图。
+
+实际入口是 `python -m pc_vision.godot_bridge`：板端检测→原 timed B→POSE2/CRC串口→电脑校时/准入→原 `game_session/ray_game`→本机TCP→现有Godot美术。新增C/Python文件只承担报文和进程桥接，没有复制检测器、求解器或游戏状态机。坐标仍是未标定1280×720相机像素预览；虚拟模型使用唯一JSON的固定尺寸，不能把它们解释为毫米。Godot使用SVG物理锚点及固定尺寸，不随bbox伸缩。
+
+- 选关页5列×3行，共15格，全部显示布局缩略图并可选择；第1～3关沿用 `b206663` 的非SOURCE物体中心/方向及 `sample_photo/075..077.png` 参考。按最新要求，第4～15关用固定随机种子生成物体位置/朝向及固定逻辑光源，并写入同一JSON；Portal成对、物体完整位于画布内，不检查或保证可解。`python -m pc_vision.level_layouts --seed N`可仅重新生成后12关，不能把生成布局当作实际检测输入。
+- 三关分别冻结原光源的实际发射点和方向：旧SOURCE质心+方向×(54×2/3+3/100)，转为显式emitter；不再要求实体SOURCE。物体锚点不变，实体允许移动/旋转，不能依靠只转旧SOURCE求解。板端无关卡测试仍为(32,500)向右。
+- 板端只发送本帧B确认后的姿态；PENDING/缺失/异常报文不附旧坐标。POSE2明确传递原generation/sequence/captured_ms、published_ms、detector_profile和质量掩码，采用CRC、有界解析、完整场景替换、序号检查。旧scene-v1保留作历史，不用于此入口。
+- 电脑发出只读SYNC2 nonce校时；保留整个往返时间给出的映射区间，允许1ms/s的短期时钟漂移估计，5s未更新即失效。整个采集区间必须位于选关/开始之后、当前时刻之前及250ms以内才交给C；计时取区间上界，避免低估用时多给星。原板端时间原样附在快照，接收时间不冒充采集时间。这是软件时钟映射，不是曝光时刻或计量校准。
+- C仍负责准备不计时、明确开始后180s、3/2/1星、超时与切关拒绝旧帧。显示保留独立：PENDING至多6s，明确缺失至多250ms，保留原始帧号/时间且变暗；断线立即清空。保留内容从不回送C参与通关。
+- 原板端generation/sequence/time完整保留在 `board_frame`。C会话的sequence显式映射为“16位电脑串口连接epoch+48位板端原sequence”，映射范围外拒绝；不是把旧观测重新采集。这样板端重连/重启后可恢复递增输入，计时继续，已结算结果冻结，只有选关请求才重置关卡。C的captured_ms明确为电脑单调时钟映射区间上界。
+- 此部署中PC是15关游戏配置的唯一权威；前三关沿用旧布局，后12关是未经可解性验证的随机构图。板端HDMI保留独立无关卡诊断光束及其PortalB单侧出口。它与PC各关固定光源/旧配对规则不是同一局，不称作同步双屏游戏。要让HDMI显示PC同局结果，仍需后续返回权威光段/游戏状态的协议。
+
+源码、host测试、Godot软件/渲染检查和ARM/BOOT打包与板卡实测分别记录；主机测试不能证明实际串口稳定性、B支持间隔或端到端延迟。使用步骤见[Godot说明](godot/README.md)和[Standalone说明](../color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。下面是此前方案与历史约束。
+
 > 2026-10-27 最新决定覆盖下文三标签路线：恢复第一版 `b206663` 的彩色旧物块实景光线叠加；恢复前源码已保存于 Git `636f4e5a659b6e3e9266e54385f753759bf0ce75`。运行仍为 Standalone/core0，虚拟光源 `(32,500)` 向右。Mirror 保留黄色主体与黑色端点，Portal 恢复蓝/橙主体与白点/白环，二者均去掉中央白条；WALL 保留白条。使用同一 `vision_ps` 的 restored_markers profile，不链接 AprilTag。保留 timed B 与250ms支持间隔、安全三缓冲和同帧原图/光路提交。PENDING画面保留上限6s、明确缺失上限250ms，显示 STALE/原始帧龄，旧画面不能作为新姿态或通关依据。Portal B 默认沿 solid→ring 轴的正法向固定单侧垂直射出；出口随 B 转动，原配对规则保留给其他调用路径。当前交付仍无菜单/关卡，下面电脑完整游戏及三标签测量是历史/后续方案，不扩大此次恢复范围。构建与验证见 [STANDALONE_BEAM.md](../color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md)。
 
 更新：2026-10-27（实物尺寸与标签记录）。本文是后续实施方案；未把规划中的功能记为已实现或已验收。

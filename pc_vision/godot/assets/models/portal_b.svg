@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="172" height="64" viewBox="-86 -32 172 64">
+<svg data-model-length="164" data-model-width="56" xmlns="http://www.w3.org/2000/svg" width="172" height="64" viewBox="-86 -32 172 64">
   <title>Orange portal B, directed along positive X</title>
   <desc>Transparent sprite centered at 0,0, pixel 86,32. Nominal OBB is 164 by 56. Solid dot marks negative X, open ring marks positive X. Both long sides are active; end caps are visually distinct.</desc>
   <defs>

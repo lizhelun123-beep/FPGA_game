@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="148" height="20" viewBox="-74 -10 148 20">
+<svg data-model-length="140" data-model-width="12" xmlns="http://www.w3.org/2000/svg" width="148" height="20" viewBox="-74 -10 148 20">
   <title>Gold-framed mirror, zero-degree pose</title>
   <desc>Transparent sprite centered at 0,0, pixel 74,10. The 140-unit finite reflective surface lies on y=0, x=-70 through 70. Decorative frame does not change reflection geometry.</desc>
   <defs>

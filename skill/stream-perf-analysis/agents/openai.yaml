@@ -1,4 +1,4 @@
 interface:
   display_name: "流式系统日志与性能分析"
-  short_description: "分析定位到实景或 Godot 显示的有效更新、新鲜度、延迟与遮挡恢复"
-  default_prompt: "使用 $stream-perf-analysis 分析已有定位与显示日志，区分真实姿态更新、算法确认、传输和界面刷新，并指出主导瓶颈。"
+  short_description: "从已有视频、音频或传感日志分析吞吐、阶段耗时、新鲜度和真实采用"
+  default_prompt: "使用 $stream-perf-analysis 分析这段已有日志，给出主导瓶颈和最小下一步。"

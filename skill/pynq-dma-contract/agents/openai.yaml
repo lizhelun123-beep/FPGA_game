@@ -1,4 +1,4 @@
 interface:
-  display_name: "PYNQ 接口与缓冲契约"
-  short_description: "离线核对板端采集与 HDMI 的 DMA 布局、缓存同步和安全退出"
-  default_prompt: "使用 $pynq-dma-contract 检查当前板端采集或显示缓冲的所有权、同步与安全退出，先用已有源码和证据定位问题。"
+  display_name: "裸板与 PYNQ DMA 缓冲契约"
+  short_description: "离线核对采集、显示或加速器的布局、缓存同步、缓冲所有权和安全退出"
+  default_prompt: "使用 $pynq-dma-contract 检查目标平台的 DMA 布局、所有权和退出证据，先运行适用的离线布局正反例。"

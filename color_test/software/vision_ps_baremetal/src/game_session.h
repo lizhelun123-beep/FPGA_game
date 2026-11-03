@@ -10,7 +10,7 @@ extern "C" {
 
 #define GAME_CONFIG_VERSION 1U
 #define GAME_SCENE_VERSION 1U
-#define GAME_MAX_LEVELS 3
+#define GAME_MAX_LEVELS 15
 #define GAME_MAX_MODELS 6
 
 typedef enum { GAME_FIXED = 0, GAME_ROTATE_ONLY, GAME_FREE } GameMotion;
@@ -70,6 +70,8 @@ typedef struct {
     RayPoint model_sizes[RAY_OBJECT_TYPE_COUNT]; /* x=length, y=width */
     int level_count;
     GameLevelConfig levels[GAME_MAX_LEVELS];
+    /* 0=legacy paired exit; +/-1=fixed B normal, matching GameBeam policy. */
+    int portal_b_exit_side;
 } GameConfig;
 
 /* Already mapped observations; exactly one of every configured physical class.
@@ -131,6 +133,11 @@ GameStatus game_session_select(GameSession *session, unsigned int level_id,
 /* Start requires a fresh complete UNSOLVED preparation scene; it never scores
  * that scene. A new post-start capture is required for a win. */
 GameStatus game_session_start(GameSession *session, uint64_t now_ms);
+/* UART deployment only: caller has matched READY2 and STARTED2 to the selected
+ * level/emitter/nonce. Board deliberately sends no preparation poses. This
+ * starts the same session timer; fresh complete post-start poses are still
+ * required for scoring. Existing scenes must remain unsolved. */
+GameStatus game_session_start_after_board_ready(GameSession *session, uint64_t now_ms);
 GameStatus game_session_submit(GameSession *session, const GameSceneInput *input,
                                uint64_t now_ms);
 /* Call even without new input. Occlusion does not pause the running timer.

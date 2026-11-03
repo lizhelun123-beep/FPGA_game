@@ -1,5 +1,7 @@
 # AX7Z020B Linux 单帧采集诊断
 
+2026-10-31：当前 version14 的板端等价迁移使用 `beam_launcher.py` / `beam_hardware.py`，入口及 PYNQ 运行策略见 [PYNQ_BEAM.md](../color_test/software/vision_ps_baremetal/PYNQ_BEAM.md)。PYNQ 构建使用600ms场景门槛、Portal A/B 径向环置信度门控和显示故障重试；仿真通过作为本工程板卡交付门槛。Notebook 位于 `notebooks/beam_v14_pynq.ipynb`。以下单帧/旧 TARGET-only 入口和历史门槛保留，不是新运行入口，不会被自动调用。
+
 本目录是现有 MIPI 链的 Linux/PYNQ 诊断适配层。单帧入口独立于 HDMI 和
 `pc_vision` 检测器，保留 **1280×720、两 lane、RAW10** 传感器配置；DDR
 仍为 BGR888，有效行 3840 字节、stride 5760、每帧 4147200 字节、三采集
@@ -298,3 +300,7 @@ python -m unittest discover -s pynq_vision/tests -v
 时钟异常在采集资源操作前停止、无 HDMI 的完整模拟生命周期、单帧成功/失败
 记录，以及原有 RAW10/VDMA/stride 检查。实际 XSA 不在工作区时，制品集成
 用例会明确跳过。这里的 mock 检查不是 RTL 仿真、实现或板端采集。
+# 可选的PYNQ/Linux鼠标教学模式
+
+使用原Session增加 `--teaching-mouse /dev/input/eventX`，按OUTLINE红色轮廓→FEATURE绿色特征→黄色光线逐阶段确认，支持未闭合提醒及按层擦除的橡皮；板端只显示当前阶段标记。特征和候选规则通过同一UART回传，电脑原网页后台的 `/teaching` 自动预览并导出代码草案。见 [TEACHING_MODE.md](TEACHING_MODE.md)。默认入口和原DMA准入规则保持不变；本功能未进行真实板端验证。
+

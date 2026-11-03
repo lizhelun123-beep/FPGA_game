@@ -854,8 +854,23 @@ static void continuous_checks(void)
     CHECK(game_display_update(&display,&source,20)==GAME_DISPLAY_TIMEOUT);
     CHECK(display.state==GAME_DISPLAY_RETAINED && !f.releases && f.data[2*frame]==0x54);
     CHECK(game_display_update(&display,&source,20)==GAME_DISPLAY_BAD_STATE);
+    /* Recovery never stops/reconfigures scanout. It proves RUN/no-errors and
+     * restarts the two-new-START retirement observation before store reuse. */
+    f.stall_events=0;
+    CHECK(game_display_resume_scanout(&display)==GAME_DISPLAY_OK);
+    CHECK(display.state==GAME_DISPLAY_SCANNING && display.update_pending);
+    for (i=0;i<200 && display.update_pending;++i) {
+        GameDisplayStatus status=game_display_poll(&display);
+        CHECK(status==GAME_DISPLAY_OK || status==GAME_DISPLAY_BUSY);
+        if (status==GAME_DISPLAY_BUSY) CHECK(wait_ms(&f,1)==0);
+    }
+    CHECK(!display.update_pending && display.state==GAME_DISPLAY_SCANNING);
+    CHECK(game_display_update(&display,&source,100)==GAME_DISPLAY_OK);
+    configs=finishes=0;
+    for (i=0;i<f.events;++i) { if (f.event[i]==CONFIGURE) ++configs;if (f.event[i]==FINISH || f.event[i]==OUTPUT_OFF) ++finishes; }
+    CHECK(configs==1 && finishes==0 && !f.releases && f.reg[0]==0x10001);
     CHECK(game_display_stop(&display,100)==GAME_DISPLAY_OK && f.releases==1 && game_display_owner_can_exit(&display));
-    printf("PASS continuous safety: %u checks;three stores,ordered handoff,no timing restart,timeout retains;fake only\n",checks);
+    printf("PASS continuous safety: %u checks;three stores,ordered handoff,timeout resumes without timing restart;fake only\n",checks);
 }
 static void live_session_contract(void)
 {

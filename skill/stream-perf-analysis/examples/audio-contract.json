@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "stages": {
+    "read_audio": "leaf",
+    "filter_audio": "envelope"
+  }
+}

@@ -42,6 +42,17 @@ var requested_screen := "menu"
 var effect_preview := false
 var recent_hit_ids: Array[String] = []
 var active_sparks: Array[Node2D] = []
+var live_mode := false
+var bridge_port := 47632
+var bridge := StreamPeerTCP.new()
+var bridge_buffer := PackedByteArray()
+var bridge_retry_ms := 0
+var last_packet_ms := 0
+var game_board: BoardArt
+var timer_label: Label
+var status_label: Label
+var start_button: Button
+var model_nominal_sizes: Dictionary = {}
 
 func _ready() -> void:
 	font = SystemFont.new()
@@ -50,6 +61,8 @@ func _ready() -> void:
 	_parse_arguments()
 	_load_config()
 	_load_assets()
+	if live_mode:
+		command_requested.connect(_send_command)
 	if not scene_file.is_empty():
 		var incoming = _read_json(scene_file)
 		if _scene_valid(incoming) or _reference_valid(incoming):
@@ -59,13 +72,13 @@ func _ready() -> void:
 					selected_index = index
 					break
 		else:
-			startup_error = "场景预览文件不完整；等待后端场景"
+			startup_error = "正在准备关卡，请稍候"
 	if not result_file.is_empty():
 		var incoming_result = _read_json(result_file)
 		if _result_valid(incoming_result):
 			result_data = incoming_result.duplicate(true)
 		else:
-			startup_error = "结算预览文件不完整；等待后端结算"
+			startup_error = "正在读取挑战成绩，请稍候"
 	_show_screen(requested_screen)
 	if effect_preview:
 		_preview_spark.call_deferred()
@@ -84,6 +97,120 @@ func _parse_arguments() -> void:
 			screenshot_file = argument.trim_prefix("--screenshot=")
 		elif argument == "--effect-preview":
 			effect_preview = true
+		elif argument.begins_with("--bridge=127.0.0.1:"):
+			bridge_port = int(argument.trim_prefix("--bridge=127.0.0.1:"))
+			live_mode = bridge_port > 0 and bridge_port <= 65535
+
+func _process(_delta: float) -> void:
+	if not live_mode:
+		return
+	bridge.poll()
+	var now := Time.get_ticks_msec()
+	if bridge.get_status() == StreamPeerTCP.STATUS_NONE or bridge.get_status() == StreamPeerTCP.STATUS_ERROR:
+		if not scene_data.is_empty() and scene_data.get("state") != "DISCONNECTED":
+			_mark_bridge_gap(true)
+		if now >= bridge_retry_ms:
+			bridge.disconnect_from_host()
+			bridge_buffer.clear()
+			bridge.connect_to_host("127.0.0.1", bridge_port)
+			bridge_retry_ms = now + 1000
+		return
+	var available := bridge.get_available_bytes()
+	if available > 0:
+		var received := bridge.get_data(mini(available, 16384))
+		if received[0] != OK:
+			bridge.disconnect_from_host()
+			return
+		_consume_bridge_bytes(received[1])
+	var update_window_ms := int(board_config.get("scene_max_age_ms", 350))
+	if last_packet_ms > 0 and now - last_packet_ms > update_window_ms and scene_data.get("state") == "LIVE":
+		_mark_bridge_gap(false)
+	if last_packet_ms > 0 and now - last_packet_ms >= 6000 and not _keep_running_scene() and not scene_data.get("models", []).is_empty():
+		scene_data["models"] = []
+		scene_data["segments"] = []
+		_refresh_live_game()
+
+func _keep_running_scene() -> bool:
+	return screen == "game" and int(scene_data.get("game_state", 0)) == 2 and not scene_data.get("models", []).is_empty()
+
+func _mark_bridge_gap(disconnected: bool) -> void:
+	# Keep the complete last picture of a running level. It remains stale and
+	# cannot emit hit effects; the Python/C authority owns any replacement.
+	if not _keep_running_scene() and disconnected:
+		scene_data["models"] = []
+		scene_data["segments"] = []
+	scene_data["state"] = "DISCONNECTED" if disconnected else "STALE"
+	scene_data["valid"] = false
+	scene_data["success"] = false
+	scene_data["display_status"] = "正在连接控制程序，请确认连接程序已启动" if disconnected else "正在更新物块位置"
+	if disconnected:
+		scene_data["board_ready"] = false
+	_clear_sparks()
+	_refresh_live_game()
+
+func _consume_bridge_bytes(data: PackedByteArray) -> void:
+	bridge_buffer.append_array(data)
+	if bridge_buffer.size() > 65536:
+		bridge_buffer.clear()
+		bridge.disconnect_from_host()
+		return
+	while bridge_buffer.has(10):
+		var end := bridge_buffer.find(10)
+		# Decode only complete UTF8 messages; a TCP read may split a Chinese glyph.
+		var packet = JSON.parse_string(bridge_buffer.slice(0, end).get_string_from_utf8())
+		bridge_buffer = bridge_buffer.slice(end + 1)
+		if packet is Dictionary:
+			last_packet_ms = Time.get_ticks_msec()
+			_receive_packet(packet)
+func _send_command(action: String, context: Dictionary) -> void:
+	if bridge.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+		return
+	var command := {"action": action}
+	command.merge(context)
+	bridge.put_data((JSON.stringify(command) + "\n").to_utf8_buffer())
+
+func _receive_packet(packet: Dictionary) -> void:
+	if not _scene_valid(packet):
+		return
+	var next_screen := str(packet.get("screen", "menu"))
+	for index in range(levels.size()):
+		if int(levels[index].get("id")) == int(packet.get("level_id")):
+			selected_index = index
+	if next_screen == "result":
+		if packet.get("result") is Dictionary and _result_valid(packet["result"]):
+			if screen != "result" or packet["result"] != result_data:
+				present_result(packet["result"])
+		return
+	if next_screen != screen:
+		scene_data = packet.duplicate(true)
+		_show_screen(next_screen)
+	else:
+		present_scene(packet)
+
+func _refresh_live_game() -> void:
+	if screen != "game" or not is_instance_valid(game_board):
+		return
+	game_board.objects = scene_data.get("models", [])
+	game_board.rays = scene_data.get("segments", [])
+	game_board.stale = str(scene_data.get("state", "")) not in ["LIVE", "VALID"]
+	# The fixed emitter is configuration, so it can be shown before any camera
+	# pose exists. Never fill missing physical objects from the level preview.
+	if game_board.objects.is_empty() and int(scene_data.get("game_state", 0)) == 1 and scene_data.get("state") != "DISCONNECTED":
+		var emitter: Dictionary = levels[selected_index].get("emitter", {})
+		if emitter.has("point") and emitter.has("direction"):
+			game_board.objects = [{"type": "SOURCE", "center": emitter["point"], "axis": emitter["direction"],
+				"size": model_sizes["SOURCE"], "logical_emitter": true}]
+			game_board.stale = false
+	game_board.queue_redraw()
+	if is_instance_valid(timer_label):
+		timer_label.text = _format_time(int(scene_data.get("remaining_ms", 180000)))
+	if is_instance_valid(status_label):
+		status_label.text = str(scene_data.get("display_status", "请摆放本关物块"))
+	if is_instance_valid(start_button):
+		start_button.visible = int(scene_data.get("game_state", 0)) == 1
+		var board_ready := bool(scene_data.get("board_ready", scene_data.get("ready", false)))
+		var packet_state := str(scene_data.get("state", ""))
+		start_button.disabled = not board_ready or packet_state in ["HELD", "DISCONNECTED"]
 
 func _read_json(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
@@ -103,7 +230,7 @@ func _load_config() -> void:
 	model_sizes = config.get("model_sizes", {})
 	levels = board_config.get("levels", [])
 	if levels.is_empty() or model_sizes.is_empty():
-		startup_error = "未找到现有 game_config.json；请从仓库启动预览"
+		startup_error = "关卡加载失败，请重新启动游戏"
 
 func _load_assets() -> void:
 	for name in ["landscape", "clouds", "foliage"]:
@@ -120,6 +247,7 @@ func _load_assets() -> void:
 					var values = parser.get_named_attribute_value("viewBox").split(" ", false)
 					if values.size() == 4:
 						model_art_rects[name] = Rect2(float(values[0]), float(values[1]), float(values[2]), float(values[3]))
+						model_nominal_sizes[name] = Vector2(float(parser.get_named_attribute_value("data-model-length")), float(parser.get_named_attribute_value("data-model-width")))
 					break
 	for role in ["primary", "secondary", "card"]:
 		for state in ["normal", "hover", "pressed", "disabled"]:
@@ -168,7 +296,6 @@ func _show_screen(next_screen: String) -> void:
 		_build_game()
 	else:
 		_build_result()
-	_label("美术预览", Rect2(1130, 10, 122, 30), 16, Color("#4f7562"), HORIZONTAL_ALIGNMENT_RIGHT)
 	if not startup_error.is_empty():
 		_label(startup_error, Rect2(180, 683, 920, 26), 16, Color("#884d3e"), HORIZONTAL_ALIGNMENT_CENTER)
 	queue_redraw()
@@ -231,30 +358,42 @@ func _button(text: String, rect: Rect2, callback: Callable, primary: bool = fals
 	return button
 
 func _build_menu() -> void:
-	_label("光路奇旅", Rect2(0, 44, 1280, 90), 62, INK, HORIZONTAL_ALIGNMENT_CENTER)
-	_label("转动小小的光源，让灵感一路闪亮", Rect2(0, 132, 1280, 42), 25, Color("#50775b"), HORIZONTAL_ALIGNMENT_CENTER)
-	var count = mini(levels.size(), 3)
+	_label("光路奇旅", Rect2(0, 12, 1280, 65), 46, INK, HORIZONTAL_ALIGNMENT_CENTER)
+	_label("转动镜面 · 穿越传送门 · 点亮目标", Rect2(0, 75, 1280, 32), 21, Color("#50775b"), HORIZONTAL_ALIGNMENT_CENTER)
+	var selection: Dictionary = board_config.get("selection", {})
+	var count := mini(int(selection.get("slot_count", 15)), levels.size())
+	var columns := int(selection.get("columns", 5))
 	for index in range(count):
-		var x = 86.0 + index * 378.0
+		var x := 45.0 + (index % columns) * 240.0
+		var y := 118.0 + floori(float(index) / columns) * 148.0
 		var card = Button.new()
 		card.position = Vector2(x, 219)
-		card.size = Vector2(352, 288)
+		card.position.y = y
+		card.size = Vector2(230, 138)
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		for state in ["normal", "hover", "pressed", "disabled"]:
 			card.add_theme_stylebox_override(state, _style("card", "pressed" if index == selected_index and state == "normal" else state))
 		card.pressed.connect(_select_level.bind(index))
 		ui.add_child(card)
-		_label("第 %02d 关" % int(levels[index].get("id", index + 1)), Rect2(x + 24, 235, 150, 40), 21, TEAL)
-		_label(LEVEL_NAMES[index] if index < LEVEL_NAMES.size() else "光路挑战", Rect2(x + 24, 436, 304, 40), 26, INK, HORIZONTAL_ALIGNMENT_CENTER)
-		_add_board(Rect2(x + 22, 286, 308, 142), levels[index].get("objects", []), [], false, true)
-		_label("参考布局", Rect2(x + 220, 242, 105, 25), 14, MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
+		_label("第 %02d 关" % (index + 1), Rect2(x + 15, y + 7, 120, 28), 19, TEAL)
+		_add_board(Rect2(x + 14, y + 34, 202, 70), _reference_models(levels[index]), [], false, true)
+		var level_name := str(levels[index].get("name", LEVEL_NAMES[index] if index < LEVEL_NAMES.size() else "光路挑战"))
+		_label(level_name, Rect2(x + 8, y + 104, 214, 24), 18, INK, HORIZONTAL_ALIGNMENT_CENTER)
 		if index == selected_index:
-			_label("已选择", Rect2(x + 118, 471, 116, 24), 15, TEAL, HORIZONTAL_ALIGNMENT_CENTER)
-	_button("开始游戏", Rect2(470, 546, 340, 82), _preview_game, true)
-	_label("摆放实物 · 观察光路 · 点亮目标", Rect2(0, 639, 1280, 32), 20, Color("#4b7259"), HORIZONTAL_ALIGNMENT_CENTER)
-	_label("仅用于美术预览 · 实时识别尚未接入", Rect2(0, 682, 1280, 25), 14, Color("#5d785e"), HORIZONTAL_ALIGNMENT_CENTER)
+			_label("已选择", Rect2(x + 139, y + 8, 76, 25), 14, TEAL, HORIZONTAL_ALIGNMENT_RIGHT)
+	_button("进入关卡", Rect2(470, 577, 340, 67), _preview_game, true)
+	_label("选择关卡，开始挑战", Rect2(0, 653, 1280, 28), 18, Color("#4b7259"), HORIZONTAL_ALIGNMENT_CENTER)
+
+func _reference_models(level: Dictionary) -> Array:
+	var objects: Array = level.get("objects", []).duplicate(true)
+	var emitter: Dictionary = level.get("emitter", {})
+	if not emitter.is_empty():
+		objects.append({"type": "SOURCE", "center": emitter["point"], "axis": emitter["direction"], "logical_emitter": true})
+	return objects
 
 func _select_level(index: int) -> void:
+	if index < 0 or index >= levels.size():
+		return
 	selected_index = index
 	_show_screen("menu")
 
@@ -264,12 +403,18 @@ func _selected_level_id() -> int:
 	return 0
 
 func _preview_game() -> void:
+	if live_mode:
+		command_requested.emit("select", {"level_id": _selected_level_id()})
+		return
 	command_requested.emit("start", {"level_id": _selected_level_id(), "art_preview": true})
 	if not scene_data.is_empty() and int(scene_data.get("level_id", 0)) != _selected_level_id():
 		scene_data = {}
 	_show_screen("game")
 
 func _preview_next() -> void:
+	if live_mode:
+		command_requested.emit("skip", {})
+		return
 	command_requested.emit("skip", {"level_id": _selected_level_id(), "art_preview": true})
 	if not levels.is_empty():
 		selected_index = (selected_index + 1) % levels.size()
@@ -277,43 +422,53 @@ func _preview_next() -> void:
 	_show_screen("game")
 
 func _build_game() -> void:
-	_button("关卡菜单", Rect2(34, 28, 146, 58), func(): _show_screen("menu"))
+	_button("关卡菜单", Rect2(34, 28, 146, 58), _return_menu)
 	var level_id = int(scene_data.get("level_id", _selected_level_id()))
 	_label("第 %02d 关" % level_id, Rect2(210, 28, 260, 58), 30)
 	_panel(Rect2(526, 20, 228, 75))
 	var remaining = scene_data.get("remaining_ms", null)
-	_label(_format_time(int(remaining)) if remaining != null else "--:--", Rect2(536, 24, 208, 60), 38, INK, HORIZONTAL_ALIGNMENT_CENTER)
+	timer_label = _label(_format_time(int(remaining)) if remaining != null else "--:--", Rect2(536, 24, 208, 60), 38, INK, HORIZONTAL_ALIGNMENT_CENTER)
 	_label("剩余时间", Rect2(760, 30, 110, 45), 16, Color("#4d715b"))
 	_button("跳过本关", Rect2(1094, 29, 152, 58), _preview_next)
+	if live_mode:
+		start_button = _button("开始计时", Rect2(881, 29, 185, 58), func(): command_requested.emit("start", {}), true)
 	_panel(Rect2(40, 111, 1200, 542))
 	if scene_data.is_empty():
 		_add_board(GAME_BOARD_AREA, [], [], false, false)
-		_label("摆好实物，让光路在这里出现", Rect2(100, 300, 1080, 68), 34, Color("#789474"), HORIZONTAL_ALIGNMENT_CENTER)
-		_label("摆放好实物，等待识别画面", Rect2(100, 367, 1080, 42), 21, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+		_label("等待场景准备", Rect2(100, 300, 1080, 68), 34, Color("#789474"), HORIZONTAL_ALIGNMENT_CENTER)
+		_label("移动或转动物块，调整光的路线", Rect2(100, 367, 1080, 42), 21, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	else:
 		var stale = str(scene_data.get("state", "")).to_upper() in ["STALE", "DISCONNECTED", "MISSING", "EXPIRED", "HELD"]
-		_add_board(GAME_BOARD_AREA, scene_data["models"], scene_data["segments"], stale, false)
-	var status = "等待实时场景" if scene_data.is_empty() else str(scene_data.get("display_status", _state_label(str(scene_data.get("state", "")))))
+		game_board = _add_board(GAME_BOARD_AREA, scene_data["models"], scene_data["segments"], stale, false)
+	var status = "请摆放本关物块" if scene_data.is_empty() else str(scene_data.get("display_status", _state_label(str(scene_data.get("state", "")))))
 	if scene_data.get("origin", "") == "config_reference_art_preview":
-		status = "静态光路与火花预览 · 非实时观测" if effect_preview else "静态关卡参考 · 非实时观测"
+		status = "关卡布局"
 	_panel(Rect2(42, 656, 1196, 51))
-	_label(status, Rect2(64, 662, 700, 37), 19, TEAL)
+	status_label = _label(status, Rect2(64, 662, 700, 37), 19, TEAL)
 	_label("轻轻转动实物，观察光的方向", Rect2(740, 662, 476, 37), 17, Color("#58745c"), HORIZONTAL_ALIGNMENT_RIGHT)
+	if live_mode:
+		_refresh_live_game()
+
+func _return_menu() -> void:
+	if live_mode:
+		command_requested.emit("menu", {})
+	else:
+		_show_screen("menu")
 
 func _state_label(value: String) -> String:
 	match value.to_upper():
-		"LIVE", "VALID": return "场景已接收"
-		"STALE", "HELD": return "等待新观测 · 画面已变暗"
-		"DISCONNECTED": return "连接已断开 · 等待场景"
-		"MISSING", "EXPIRED": return "场景不可用 · 等待新观测"
-		"ART_PREVIEW": return "静态关卡参考 · 非实时观测"
-		_: return value
+		"LIVE", "VALID": return "转动物块，点亮目标"
+		"STALE", "HELD": return "正在更新物块位置"
+		"DISCONNECTED": return "正在重新连接设备"
+		"MISSING", "EXPIRED": return "请将本关物块放入场地"
+		"ART_PREVIEW": return "关卡布局"
+		_: return "请摆放本关物块"
 
 func _build_result() -> void:
 	# The stars and elapsed value are supplied; no threshold/solve logic lives here.
 	_panel(Rect2(274, 83, 732, 550))
 	var ready = not result_data.is_empty()
-	var title = str(result_data.get("outcome", "等待游戏结算"))
+	var title = str(result_data.get("outcome", "挑战结算"))
 	_label(title, Rect2(320, 117, 640, 65), 42, INK, HORIZONTAL_ALIGNMENT_CENTER)
 	var stars = int(result_data.get("stars", -1))
 	for index in range(3):
@@ -326,17 +481,17 @@ func _build_result() -> void:
 		ui.add_child(star)
 	_label("本关用时", Rect2(390, 362, 200, 40), 23, MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	_label(_format_time(int(result_data["elapsed_ms"])) if ready else "--:--", Rect2(590, 351, 300, 65), 42, INK, HORIZONTAL_ALIGNMENT_CENTER)
-	_label("谢谢你的每一次灵光一转", Rect2(330, 438, 620, 40), 22, TEAL, HORIZONTAL_ALIGNMENT_CENTER)
-	_button("关卡菜单", Rect2(352, 531, 250, 67), func(): _show_screen("menu"))
+	_label("继续挑战，收集更多星星", Rect2(330, 438, 620, 40), 22, TEAL, HORIZONTAL_ALIGNMENT_CENTER)
+	_button("关卡菜单", Rect2(352, 531, 250, 67), _return_menu)
 	_button("下一关", Rect2(676, 531, 250, 67), _preview_next, true)
 	_panel(Rect2(300, 640, 680, 54))
-	_label("结算界面预览 · 星级与用时来自外部示例", Rect2(310, 648, 660, 32), 16, Color("#4e745b"), HORIZONTAL_ALIGNMENT_CENTER)
+	_label("选择下一关，继续挑战", Rect2(310, 648, 660, 32), 16, Color("#4e745b"), HORIZONTAL_ALIGNMENT_CENTER)
 
 func _format_time(milliseconds: int) -> String:
 	var seconds = int(maxi(0, milliseconds) / 1000)
 	return "%02d:%02d" % [int(seconds / 60), seconds % 60]
 
-func _add_board(area: Rect2, objects: Array, rays: Array, stale: bool, reference: bool) -> void:
+func _add_board(area: Rect2, objects: Array, rays: Array, stale: bool, reference: bool) -> BoardArt:
 	var board = BoardArt.new()
 	board.presenter = self
 	board.area = area
@@ -345,6 +500,7 @@ func _add_board(area: Rect2, objects: Array, rays: Array, stale: bool, reference
 	board.stale = stale
 	board.reference = reference
 	ui.add_child(board)
+	return board
 
 func _world_transform(area: Rect2) -> Transform2D:
 	var world = Vector2(float(board_config.get("width", 1279)), float(board_config.get("height", 719)))
@@ -360,7 +516,7 @@ func draw_board(canvas: Node2D, area: Rect2, objects: Array, rays: Array, stale:
 	canvas.draw_style_box(_board_border(), bounds)
 	# A single uniform transform applies to centers, axes, art and ray endpoints.
 	# The quiet flat board keeps the authoritative geometry readable.
-	var geometry_alpha = 0.40 if stale else 1.0
+	var geometry_alpha = 1.0 if live_mode else (0.40 if stale else 1.0)
 	for object in objects:
 		var kind = str(object.get("type", ""))
 		var center = _vector(object.get("center", []))
@@ -369,9 +525,15 @@ func draw_board(canvas: Node2D, area: Rect2, objects: Array, rays: Array, stale:
 		if texture == null or not model_art_rects.has(kind):
 			continue
 		var rotation = axis.angle()
-		var model_transform = transform * Transform2D(rotation, center)
+		var size := _vector(object.get("size", model_sizes.get(kind, [])))
+		var nominal: Vector2 = model_nominal_sizes.get(kind, size)
+		if nominal.x <= 0 or nominal.y <= 0 or size.x <= 0 or size.y <= 0:
+			continue
+		if object.get("logical_emitter", false):
+			center -= axis.normalized() * size.x * (2.0 / 3.0)
+		var model_transform = transform * Transform2D(rotation, size / nominal, 0, center)
 		canvas.draw_set_transform_matrix(model_transform)
-		var tint = Color(1, 1, 1, geometry_alpha * (0.6 if object.get("held", false) else 1.0))
+		var tint = Color(1, 1, 1, geometry_alpha * (0.6 if object.get("held", false) and not live_mode else 1.0))
 		canvas.draw_texture_rect(texture, model_art_rects[kind], false, tint)
 	canvas.draw_set_transform_matrix(Transform2D.IDENTITY)
 	for ray in rays:
@@ -449,7 +611,10 @@ func present_scene(snapshot: Dictionary) -> bool:
 		_clear_sparks()
 	scene_data = snapshot.duplicate(true)
 	if screen == "game":
-		_show_screen("game")
+		if live_mode:
+			_refresh_live_game()
+		else:
+			_show_screen("game")
 	return true
 
 func present_result(result: Dictionary) -> bool:

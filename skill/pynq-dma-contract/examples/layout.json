@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "channels": [
+    {
+      "name": "capture",
+      "width": 1280,
+      "height": 720,
+      "bytes_per_pixel": 3,
+      "stride": 5760,
+      "span": 4147200,
+      "cache_line": 64,
+      "buffers": [
+        {"address": 268435456, "owner": "device_write", "cpu_access": "none"},
+        {"address": 272629760, "owner": "cpu_read", "cpu_access": "read"}
+      ]
+    },
+    {
+      "name": "display",
+      "width": 1280,
+      "height": 720,
+      "bytes_per_pixel": 3,
+      "stride": 3840,
+      "span": 2764800,
+      "cache_line": 64,
+      "buffers": [
+        {"address": 285212672, "owner": "device_read", "cpu_access": "none"}
+      ]
+    }
+  ]
+}

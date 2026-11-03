@@ -56,16 +56,20 @@ def generate(config):
     game = config["board_game"]
     if config["version"] != 1 or game["version"] != 1:
         raise ValueError("Unsupported game configuration version")
+    portal_side = game.get("portal_b_exit_side", 0)
+    if type(portal_side) is not int or portal_side not in (-1, 0, 1):
+        raise ValueError("Invalid game Portal B exit side")
     if game["coordinate_space"] != "uncalibrated_preview":
         raise ValueError("Default photo anchors require uncalibrated_preview; do not invent mm mapping")
     levels = game["levels"]
-    if not 1 <= len(levels) <= 3 or len({level["id"] for level in levels}) != len(levels):
+    if not 1 <= len(levels) <= 15 or len({level["id"] for level in levels}) != len(levels):
         raise ValueError("Invalid or duplicate levels")
     if set(config["model_sizes"]) != set(TYPES):
         raise ValueError("Expected all six canonical model sizes")
     lines = ["/* GENERATED from pc_vision/game_config.json; do not edit. */",
              '#include "game_pump.h"', '#include "game_render.h"', "const GameConfig game_default_config = {",
              "    .version = GAME_CONFIG_VERSION,",
+             f"    .portal_b_exit_side = {portal_side},",
              '    .coordinate_space = "uncalibrated_preview",',
              f'    .width = {scalar(game["width"])}, .height = {scalar(game["height"])},',
              f'    .physics_scale = {scalar(config["physics_scale"])},',
@@ -154,13 +158,14 @@ def generate(config):
                               f'    .version = GAME_RENDER_VERSION, .scene = {rect(scene)}', "};", ""])
 
 
-def generate_beam(config):
+def generate_beam(config, age_override=None, support_gap_override=None):
     """One configured detector/beam profile; no level table or fake SOURCE."""
     real = config["real_scene"]
     beam = real["beam"]
-    max_age_ms = beam["max_age_ms"]
-    if type(max_age_ms) is not int or max_age_ms not in (0, 250):
-        raise ValueError("Beam age policy must be 0 (untimed test) or 250 ms")
+    max_age_ms = beam["max_age_ms"] if age_override is None else age_override
+    allowed_age = (0, 250, 600) if age_override is not None else (0, 250)
+    if type(max_age_ms) is not int or max_age_ms not in allowed_age:
+        raise ValueError("Beam age policy is outside the selected build contract")
     profile = beam.get("detector_profile", "apriltag")
     if profile not in ("restored_markers", "apriltag"):
         raise ValueError("Unknown beam detector profile")
@@ -178,11 +183,19 @@ def generate_beam(config):
             type(dropout) is not int or not 0 <= dropout <= min(timeout, 250)):
         raise ValueError("Invalid display retention")
     profile_c = "VISION_PROFILE_RESTORED" if profile == "restored_markers" else "VISION_PROFILE_TAGS"
+    support_gap = beam.get("stability_support_gap_ms", 250)
+    if type(support_gap) is not int or support_gap not in (250, 350):
+        raise ValueError("Beam stability support gap must be 250 or 350 ms")
+    # PYNQ 单独选择支持间隔，裸板配置和原有时序算法继续使用原参数。
+    if support_gap_override is not None:
+        if type(support_gap_override) is not int or support_gap_override not in (250, 350, 500):
+            raise ValueError("PYNQ stability support gap must be 250, 350 or 500 ms")
+        support_gap = support_gap_override
     lines = ['/* GENERATED from pc_vision/game_config.json; do not edit. */',
              '#include "game_beam_config.h"',
              'const GameBeamConfig game_beam_default_config = {',
              f'    GAME_BEAM_CONFIG_VERSION,1280,720,{origin_c},{direction_c},{max_age_ms},VISION_STABILITY_{beam["stability_algorithm"]},',
-             f'    {profile_c},{timeout},{dropout},{side}', '};']
+             f'    {profile_c},{timeout},{dropout},{side},{support_gap}', '};']
     if profile == "restored_markers":
         return '\n'.join(lines)+ '\n'
     templates = real["portal_templates"]
@@ -230,11 +243,19 @@ def main():
     parser.add_argument("--config", type=Path, default=ROOT/"pc_vision/game_config.json")
     parser.add_argument("--output", type=Path, required=True, help="Generated .h (with a companion .c table)")
     parser.add_argument("--profile", choices=("game", "beam"), default="game")
+    parser.add_argument("--pynq", action="store_true",
+                        help="生成 PYNQ 场景时限与其专用连续观测支持间隔")
     args = parser.parse_args()
     if args.output.suffix != ".h":
         parser.error("--output must end in .h")
     config = json.loads(args.config.read_text(encoding="utf-8"))
-    data = generate_beam(config) if args.profile == "beam" else generate(config)
+    if args.pynq and args.profile != "beam":
+        parser.error("--pynq requires --profile beam")
+    support_gap = None
+    if args.pynq:
+        beam = config["real_scene"]["beam"]
+        support_gap = beam.get("pynq_stability_support_gap_ms", beam.get("stability_support_gap_ms", 250))
+    data = generate_beam(config, 600 if args.pynq else None, support_gap) if args.profile == "beam" else generate(config)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.profile == "beam":
         args.output.write_text('''/* GENERATED declaration; do not edit. */

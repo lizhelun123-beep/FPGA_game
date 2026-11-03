@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="168" height="38" viewBox="-84 -19 168 38">
+<svg data-model-length="160" data-model-width="30" xmlns="http://www.w3.org/2000/svg" width="168" height="38" viewBox="-84 -19 168 38">
   <title>Stone wall, zero-degree pose</title>
   <desc>Transparent sprite centered at 0,0, pixel 84,19. Nominal full blocking OBB is 160 by 30; rounded paint corners are decorative.</desc>
   <defs>

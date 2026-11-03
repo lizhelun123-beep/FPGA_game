@@ -8,9 +8,13 @@ import struct
 
 ROOT = Path(__file__).resolve().parents[4]
 SYMBOLS = ('main', 'game_beam_submit',
-           'vision_detect_bgr888', 'game_beam_display_snapshot',
+           'beam_wire_pose_encode', 'beam_wire_feed', 'beam_wire_control_decode', 'beam_wire_sync_reply',
+           'beam_control_parse', 'beam_control_receive',
+           'beam_control_display_retired', 'game_beam_reconfigure',
+           'vision_detect_bgr888', 'game_display_resume_scanout', 'game_beam_retained_snapshot',
            'ray_game_trace_from_emitter_policy',
-           'game_display_update', 'game_baremetal_capture_copy',
+           'game_display_submit', 'game_display_poll', 'beam_uart_log_poll',
+           'vision_get_detection_diagnostics', 'game_baremetal_capture_copy',
            'game_beam_first_fault', 'sensor_start', 'sensor_stop')
 
 
@@ -34,6 +38,18 @@ def verify_elf(path):
     missing = set(SYMBOLS)-symbols
     if missing:
         raise ValueError('Missing standalone beam symbols: '+', '.join(sorted(missing)))
+    for marker in (b'frame=current_camera invalid_scene=last_confirmed_ray',
+                   b'brightness=constant timeout=until_next_valid',
+                   b'pose=current_only',
+                   b'fault_policy=continue_and_recover_scanout_never_stop',
+                   b'display_policy=continuous_recover_ray_hold',
+                   b'portal_profile=portal_ab_radial',
+                   b'b_ring=radial3of4',
+                   b'a_ring=radial3of4'):
+        if marker not in raw:
+            raise ValueError('Missing continuous-display policy marker: '+marker.decode('ascii'))
+    if b'BEAM_SAFE_STOP' in raw:
+        raise ValueError('Legacy display-stop policy remains in standalone ELF')
     header = struct.unpack_from('<16sHHIIIIIHHHHHH', raw)
     if header[1] != 2:
         raise ValueError('Require linked ET_EXEC ELF')

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="-36 -36 72 72">
+<svg data-model-length="64" data-model-width="64" xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="-36 -36 72 72">
   <title>Green target, circular 64-unit silhouette</title>
   <desc>Transparent sprite centered at 0,0, pixel 36,36. Nominal target is a circle of radius 32. Static ready-state art; activation effects belong to the presentation scene.</desc>
   <defs>

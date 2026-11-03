@@ -24,13 +24,19 @@ static int valid_config(const GameBeamConfig *c)
     RayPoint direction;
     if (!c || c->version != GAME_BEAM_CONFIG_VERSION ||
         c->width < 2 || c->height < 2 || c->width > 16384 || c->height > 16384 ||
-        (c->max_age_ms != 0 && c->max_age_ms != 250) || !finite_point(c->emitter_point) ||
+        (c->max_age_ms != 0 && c->max_age_ms != 250
+#ifdef BEAM_PYNQ_RUNTIME
+         && c->max_age_ms != 600
+#endif
+         ) || !finite_point(c->emitter_point) ||
         c->emitter_point.x < 0 || c->emitter_point.x > (float)c->width-1 ||
         c->emitter_point.y < 0 || c->emitter_point.y > (float)c->height-1 ||
         (c->stability_algorithm != VISION_STABILITY_A &&
          c->stability_algorithm != VISION_STABILITY_B) ||
         c->detector_profile < VISION_PROFILE_LEGACY || c->detector_profile > VISION_PROFILE_RESTORED ||
         c->portal_b_exit_side < -1 || c->portal_b_exit_side > 1 ||
+        (c->stability_support_gap_ms != 250U && c->stability_support_gap_ms != 350U &&
+         c->stability_support_gap_ms != 500U) ||
         c->display_timeout_ms > 6000 || c->display_dropout_ms > 250 ||
         (c->display_timeout_ms && c->display_dropout_ms > c->display_timeout_ms))
         return 0;
@@ -104,6 +110,36 @@ GameBeamStatus game_beam_init(GameBeam *beam, const GameBeamConfig *config,
     return GAME_BEAM_OK;
 }
 
+GameBeamStatus game_beam_reconfigure(GameBeam *beam, const GameBeamConfig *config,
+                                     uint64_t generation, uint64_t now_ms)
+{
+    GameBeamSnapshot *view;
+    if (!beam || !beam->initialized || !valid_config(config)) return GAME_BEAM_BAD_CONFIG;
+    if (now_ms<beam->last_now_ms) return GAME_BEAM_BAD_TIME;
+    if (!generation || generation < beam->view.generation) return GAME_BEAM_OLD_GENERATION;
+    beam->config = *config;
+    (void)unit(&beam->config.emitter_direction);
+    if (generation == beam->view.generation) {
+        /* A new logical level may share the capture owner's generation.
+         * Clear its scene/filter without changing original camera stamps. */
+        beam->last_now_ms=beam->reset_ms=now_ms;
+        beam->last_sequence=beam->last_capture_ms=0;
+        beam->have_sequence=0;
+        beam->have_display=beam->have_absence=0;
+        memset(&beam->display_view,0,sizeof beam->display_view);
+        vision_stabilizer_timed_reset(&beam->stabilizer);
+        view=&beam->view;
+        memset(view,0,sizeof *view);
+        view->generation=generation;
+        view->width=beam->config.width; view->height=beam->config.height;
+        view->emitter_point=beam->config.emitter_point;
+        view->emitter_direction=beam->config.emitter_direction;
+        view->status=GAME_BEAM_NO_FRAME;
+        return GAME_BEAM_OK;
+    }
+    return game_beam_reset(beam,generation,now_ms);
+}
+
 GameBeamStatus game_beam_reset(GameBeam *beam, uint64_t generation,
                                uint64_t now_ms)
 {
@@ -147,7 +183,12 @@ GameBeamStatus game_beam_submit(GameBeam *beam, const GameDetectionFrame *frame,
             clear_view(beam, GAME_BEAM_STALE);
         return GAME_BEAM_STALE;
     }
-    if (frame->count < 0 || frame->count > GAME_BEAM_MAX_OBJECTS ||
+    /* The detector may expose more raw candidates than the five unique game
+     * classes (for example two Portal B bodies).  That is observation
+     * ambiguity, not a caller/API failure.  Let class_mask reject duplicate,
+     * SOURCE or invalid identities as INVALID_GEOMETRY so the display owner
+     * can retain its last complete frame. */
+    if (frame->count < 0 || frame->count > VISION_MAX_DETECTIONS ||
         (frame->count && !frame->detections)) return GAME_BEAM_BAD_ARGUMENT;
     raw_mask = class_mask(frame->detections, frame->count);
     if (frame->count && !raw_mask) {
@@ -157,14 +198,17 @@ GameBeamStatus game_beam_submit(GameBeam *beam, const GameDetectionFrame *frame,
     beam->last_sequence = frame->stamp.sequence;
     beam->last_capture_ms = frame->stamp.captured_ms;
     beam->have_sequence = 1;
-    count = vision_stabilizer_update_timed(&beam->stabilizer, frame->detections,
+    count = vision_stabilizer_update_timed_gap(&beam->stabilizer, frame->detections,
                                            frame->count, frame->stamp.captured_ms,
                                            beam->config.stability_algorithm,
-                                           stable, VISION_MAX_DETECTIONS, &timed);
+                                           stable, VISION_MAX_DETECTIONS, &timed,
+                                           beam->config.stability_support_gap_ms);
     beam->view.raw_mask = raw_mask;
     beam->view.supported_mask = timed.supported_mask;
     beam->view.pending_mask = timed.pending_mask;
-    beam->view.missing_mask = timed.missing_mask;
+    /* The shared stabilizer has six historical slots; this beam has five
+     * physical classes and never requires an observed SOURCE. */
+    beam->view.missing_mask = timed.missing_mask & GAME_BEAM_PHYSICAL_MASK;
     beam->view.restricted_mask = restricted_mask;
     beam->view.sequence = frame->stamp.sequence;
     beam->view.captured_ms = frame->stamp.captured_ms;
@@ -240,8 +284,18 @@ int game_beam_display_snapshot(const GameBeam *beam, uint64_t now_ms,
     }
     if (!beam->have_display || beam->display_view.generation != beam->view.generation ||
         now_ms < beam->display_view.captured_ms) return 0;
-    limit = beam->have_absence ? beam->config.display_dropout_ms : beam->config.display_timeout_ms;
+    /* Hold the last complete camera/model/ray snapshot while new input is
+     * unconfirmed, including a short miss. display_dropout_ms still controls
+     * measured removal admission in submit(), not the age of this picture. */
+    limit = beam->config.display_timeout_ms;
     if (!limit || now_ms-beam->display_view.captured_ms >= limit) return 0;
+    return game_beam_retained_snapshot(beam,snapshot);
+}
+
+int game_beam_retained_snapshot(const GameBeam *beam, GameBeamSnapshot *snapshot)
+{
+    if (!beam || !beam->initialized || !snapshot || !beam->have_display ||
+        beam->display_view.generation != beam->view.generation) return 0;
     *snapshot = beam->display_view;
     snapshot->valid = 0;
     snapshot->display_stale = 1;
@@ -272,7 +326,9 @@ int game_beam_render(const GameBeamSnapshot *snapshot, const VisionCanvas *canva
         VisionPoint a={snapshot->ray.segments[i].start.x, snapshot->ray.segments[i].start.y};
         VisionPoint b={snapshot->ray.segments[i].end.x, snapshot->ray.segments[i].end.y};
         vision_canvas_line(canvas, a, b, 3, 0);
-        vision_canvas_line(canvas, a, b, 2, snapshot->display_stale ? 0x606000U : 0xFFFF00U);
+        /* STALE is carried by metadata/the age label. Alternating supported
+         * and pending observations must not pulse the retained ray's color. */
+        vision_canvas_line(canvas, a, b, 2, 0xFFFF00U);
     }
     vision_canvas_circle(canvas, (VisionPoint){snapshot->emitter_point.x, snapshot->emitter_point.y}, 8, 2, 0x00FFFFU);
     vision_canvas_line(canvas,

@@ -1,0 +1,544 @@
+{
+  "schemaVersion": 1,
+  "coordinateSpace": "uncalibrated_preview",
+  "width": 1279,
+  "height": 719,
+  "maxVisibleSegments": 5,
+  "levels": [
+    {
+      "id": 1,
+      "reference": "sample_photo/075.png",
+      "motion": [
+        {
+          "type": "SOURCE",
+          "motion": "rotate_only"
+        },
+        {
+          "type": "MIRROR",
+          "motion": "fixed"
+        },
+        {
+          "type": "TARGET",
+          "motion": "fixed"
+        }
+      ],
+      "snapshot": {
+        "generation": 1,
+        "sequence": 1,
+        "capturedMs": 1000,
+        "valid": true,
+        "sceneStatus": 10,
+        "budgetExceeded": false,
+        "state": 1,
+        "ready": false,
+        "elapsedMs": 0,
+        "remainingMs": 180000,
+        "stars": 0,
+        "objects": [
+          {
+            "type": "SOURCE",
+            "center": [
+              354.188,
+              465.312
+            ],
+            "axis": [
+              0.834779,
+              -0.550586
+            ],
+            "size": [
+              54.0,
+              40.0
+            ],
+            "tip": [
+              384.24,
+              445.491
+            ],
+            "direction": [
+              0.834779,
+              -0.550586
+            ],
+            "directionValid": true
+          },
+          {
+            "type": "MIRROR",
+            "center": [
+              619.562,
+              293.562
+            ],
+            "axis": [
+              0.0175008,
+              0.999847
+            ],
+            "size": [
+              140.0,
+              12.0
+            ],
+            "tip": [
+              0.0,
+              0.0
+            ],
+            "direction": [
+              0.0,
+              0.0
+            ],
+            "directionValid": false
+          },
+          {
+            "type": "TARGET",
+            "center": [
+              345.0,
+              104.0
+            ],
+            "axis": [
+              1.0,
+              0.0
+            ],
+            "size": [
+              64.0,
+              64.0
+            ],
+            "tip": [
+              0.0,
+              0.0
+            ],
+            "direction": [
+              0.0,
+              0.0
+            ],
+            "directionValid": false
+          }
+        ],
+        "ray": {
+          "success": true,
+          "termination": "TARGET",
+          "interactions": 1,
+          "hits": [
+            "MIRROR",
+            "TARGET"
+          ],
+          "segments": [
+            {
+              "start": [
+                384.265,
+                445.475
+              ],
+              "end": [
+                619.506,
+                290.319
+              ]
+            },
+            {
+              "start": [
+                619.497,
+                290.314
+              ],
+              "end": [
+                360.314,
+                132.098
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "reference": "sample_photo/076.png",
+      "motion": [
+        {
+          "type": "SOURCE",
+          "motion": "fixed"
+        },
+        {
+          "type": "TARGET",
+          "motion": "fixed"
+        },
+        {
+          "type": "PORTAL_A",
+          "motion": "free"
+        },
+        {
+          "type": "PORTAL_B",
+          "motion": "free"
+        }
+      ],
+      "snapshot": {
+        "generation": 2,
+        "sequence": 2,
+        "capturedMs": 2000,
+        "valid": true,
+        "sceneStatus": 10,
+        "budgetExceeded": false,
+        "state": 1,
+        "ready": false,
+        "elapsedMs": 0,
+        "remainingMs": 180000,
+        "stars": 0,
+        "objects": [
+          {
+            "type": "SOURCE",
+            "center": [
+              998.312,
+              323.0
+            ],
+            "axis": [
+              -0.995647,
+              0.0932044
+            ],
+            "size": [
+              54.0,
+              40.0
+            ],
+            "tip": [
+              962.469,
+              326.355
+            ],
+            "direction": [
+              -0.995647,
+              0.0932044
+            ],
+            "directionValid": true
+          },
+          {
+            "type": "TARGET",
+            "center": [
+              281.0,
+              125.0
+            ],
+            "axis": [
+              1.0,
+              0.0
+            ],
+            "size": [
+              64.0,
+              64.0
+            ],
+            "tip": [
+              0.0,
+              0.0
+            ],
+            "direction": [
+              0.0,
+              0.0
+            ],
+            "directionValid": false
+          },
+          {
+            "type": "PORTAL_A",
+            "center": [
+              859.5,
+              323.625
+            ],
+            "axis": [
+              0.0348997,
+              -0.999391
+            ],
+            "size": [
+              164.0,
+              56.0
+            ],
+            "tip": [
+              0.0,
+              0.0
+            ],
+            "direction": [
+              0.0,
+              0.0
+            ],
+            "directionValid": false
+          },
+          {
+            "type": "PORTAL_B",
+            "center": [
+              427.125,
+              121.75
+            ],
+            "axis": [
+              0.0348997,
+              -0.999391
+            ],
+            "size": [
+              164.0,
+              56.0
+            ],
+            "tip": [
+              0.0,
+              0.0
+            ],
+            "direction": [
+              0.0,
+              0.0
+            ],
+            "directionValid": false
+          }
+        ],
+        "ray": {
+          "success": true,
+          "termination": "TARGET",
+          "interactions": 1,
+          "hits": [
+            "PORTAL_A",
+            "TARGET"
+          ],
+          "segments": [
+            {
+              "start": [
+                962.439,
+                326.358
+              ],
+              "end": [
+                887.176,
+                333.404
+              ]
+            },
+            {
+              "start": [
+                398.825,
+                129.575
+              ],
+              "end": [
+                310.301,
+                137.862
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "reference": "sample_photo/077.png",
+      "motion": [
+        {
+          "type": "SOURCE",
+          "motion": "fixed"
+        },
+        {
+          "type": "TARGET",
+          "motion": "fixed"
+        },
+        {
+          "type": "PORTAL_A",
+          "motion": "fixed"
+        },
+        {
+          "type": "PORTAL_B",
+          "motion": "fixed"
+        },
+        {
+          "type": "MIRROR",
+          "motion": "free"
+        }
+      ],
+      "snapshot": {
+        "generation": 3,
+        "sequence": 3,
+        "capturedMs": 3000,
+        "valid": true,
+        "sceneStatus": 0,
+        "budgetExceeded": false,
+        "state": 1,
+        "ready": true,
+        "elapsedMs": 0,
+        "remainingMs": 180000,
+        "stars": 0,
+        "objects": [
+          {
+            "type": "SOURCE",
+            "center": [
+              972.875,
+              517.375
+            ],
+            "axis": [
+              -0.999622,
+              0.0275006
+            ],
+            "size": [
+              54.0,
+              40.0
+            ],
+            "tip": [
+              936.889,
+              518.365
+            ],
+            "direction": [
+              -0.999622,
+              0.0275006
+            ],
+            "directionValid": true
+          },
+          {
+            "type": "TARGET",
+            "center": [
+              312.0,
+              283.0
+            ],
+            "axis": [
+              1.0,
+              0.0
+            ],
+            "size": [
+              64.0,
+              64.0
+            ],
+            "tip": [
+              0.0,
+              0.0
+            ],
+            "direction": [
+              0.0,
+              0.0
+            ],
+            "directionValid": false
+          },
+          {
+            "type": "PORTAL_A",
+            "center": [
+              847.5,
+              507.5
+            ],
+            "axis": [
+              0.0,
+              -1.0
+            ],
+            "size": [
+              164.0,
+              56.0
+            ],
+            "tip": [
+              0.0,
+              0.0
+            ],
+            "direction": [
+              0.0,
+              0.0
+            ],
+            "directionValid": false
+          },
+          {
+            "type": "PORTAL_B",
+            "center": [
+              431.75,
+              119.625
+            ],
+            "axis": [
+              0.0175008,
+              -0.999847
+            ],
+            "size": [
+              164.0,
+              56.0
+            ],
+            "tip": [
+              0.0,
+              0.0
+            ],
+            "direction": [
+              0.0,
+              0.0
+            ],
+            "directionValid": false
+          },
+          {
+            "type": "MIRROR",
+            "center": [
+              293.125,
+              105.125
+            ],
+            "axis": [
+              0.681976,
+              -0.731374
+            ],
+            "size": [
+              140.0,
+              12.0
+            ],
+            "tip": [
+              0.0,
+              0.0
+            ],
+            "direction": [
+              0.0,
+              0.0
+            ],
+            "directionValid": false
+          }
+        ],
+        "ray": {
+          "success": false,
+          "termination": "BOUNDARY",
+          "interactions": 2,
+          "hits": [
+            "PORTAL_A",
+            "MIRROR"
+          ],
+          "segments": [
+            {
+              "start": [
+                936.859,
+                518.366
+              ],
+              "end": [
+                875.5,
+                520.054
+              ]
+            },
+            {
+              "start": [
+                403.525,
+                131.687
+              ],
+              "end": [
+                267.084,
+                133.052
+              ]
+            },
+            {
+              "start": [
+                267.085,
+                133.062
+              ],
+              "end": [
+                302.208,
+                719.0
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "provenance": {
+    "mode": "offline-photo-preview",
+    "configSha256": "672b1f0d82737121fc48154f2930b295287e51e8fe953074e0bad9056756c8a4",
+    "timeBasis": "synthetic offline replay; not exposure or live freshness",
+    "nativeCoreSha256": "c397c684936711e0e5ff9a3b631a3ba2852117c17e9a6f3da901bdf0938236c2",
+    "detectorSha256": "35f4d0ec44f168fbe7a6929e19ddd14de04a30cabc229001b8861a1c60bfc7bb",
+    "photos": [
+      {
+        "reference": "sample_photo/075.png",
+        "sha256": "c21a2ac2d34c2bd0d0f11879582b00d662dda05c11d010273ca5bd103770243d",
+        "detectionMs": 0.0,
+        "detectorCaptureMs": 0,
+        "replayCapturedMs": 1000,
+        "snapshotSha256": "57bd5afba7efb3c588e4b524f832dad0a541bf4495b99b75103e3b2259d4f6e3"
+      },
+      {
+        "reference": "sample_photo/076.png",
+        "sha256": "54658cfd8e48a874faec90b7a3a6862598f1cf0c18c8c260d7c7146f667b72ae",
+        "detectionMs": 0.0,
+        "detectorCaptureMs": 0,
+        "replayCapturedMs": 2000,
+        "snapshotSha256": "fc453a614940ac3cbafaecd4a47d6f3c6b246ed9350c4f4a3662104a43658daa"
+      },
+      {
+        "reference": "sample_photo/077.png",
+        "sha256": "3bd2f21f6009c8940d2db370bc57a486f22ccd04c5e52288bd6a8179f972e256",
+        "detectionMs": 0.0,
+        "detectorCaptureMs": 0,
+        "replayCapturedMs": 3000,
+        "snapshotSha256": "6f7fc698a83d5303aab746ea5c98fc39c2bc99a816acd7f7ba5b37f41134b13f"
+      }
+    ]
+  }
+}

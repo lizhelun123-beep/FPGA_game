@@ -1,0 +1,4 @@
+interface:
+  display_name: "PYNQ Python/C 会话"
+  short_description: "复用 C 算法并检查 ctypes ABI、原始帧标记与会话资源生命周期"
+  default_prompt: "使用 $pynq-c-runtime 将现有 C 算法接入同一 Python/Jupyter 会话。"

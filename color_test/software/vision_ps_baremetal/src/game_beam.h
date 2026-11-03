@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define GAME_BEAM_CONFIG_VERSION 2U
+#define GAME_BEAM_CONFIG_VERSION 3U
 #define GAME_BEAM_MAX_OBJECTS 5
 #define GAME_BEAM_PHYSICAL_MASK ((1U<<VISION_MIRROR)|(1U<<VISION_PORTAL_A)| \
                                 (1U<<VISION_PORTAL_B)|(1U<<VISION_TARGET)|(1U<<VISION_WALL))
@@ -21,19 +21,18 @@ typedef enum {
     GAME_BEAM_RESTRICTED, GAME_BEAM_PENDING, GAME_BEAM_NO_FRAME
 } GameBeamStatus;
 
-/* Camera-image pixel coordinates, not millimetres. width/height are extents
- * (1280/720), so the right/bottom inclusive edges are 1279/719. Immutable copy
- * owned by GameBeam; measured object-to-image geometry comes from detections.
- * max_age_ms is 250 for age rejection, or 0 for the untimed beam test.
- * Disabling age rejection does not change timestamps or frame identity checks. */
+/* 坐标是相机像素而非毫米；GameBeam 保存输入快照，时间戳和序号始终来自相机。
+ * 裸板配置使用0或250ms，PYNQ 编译配置另外允许600ms；设为0只关闭年龄拒绝，
+ * 不会关闭代次、序号和单调时钟检查。 */
 typedef struct {
     unsigned version, width, height;
     RayPoint emitter_point, emitter_direction;
     uint64_t max_age_ms;
     int stability_algorithm; /* VISION_STABILITY_A or VISION_STABILITY_B */
     int detector_profile;
-    uint64_t display_timeout_ms, display_dropout_ms; /* display only, 0=disabled */
+    uint64_t display_timeout_ms, display_dropout_ms; /* hold cap / observed-removal grace, 0=disabled */
     int portal_b_exit_side; /* 0=paired, +1/-1=fixed local normal */
+    unsigned stability_support_gap_ms; /* 250 default, 350 for slower beam input */
 } GameBeamConfig;
 
 typedef struct {
@@ -63,6 +62,10 @@ typedef struct {
 
 GameBeamStatus game_beam_init(GameBeam *beam, const GameBeamConfig *config,
                               uint64_t generation, uint64_t now_ms);
+/* Apply a new logical emitter at a scene boundary and clear pending scene and
+ * display history. The capture generation may stay unchanged across levels. */
+GameBeamStatus game_beam_reconfigure(GameBeam *beam, const GameBeamConfig *config,
+                                     uint64_t generation, uint64_t now_ms);
 /* A reset uses a strictly newer generation and clears pending pose history. */
 GameBeamStatus game_beam_reset(GameBeam *beam, uint64_t generation,
                                uint64_t now_ms);
@@ -75,14 +78,23 @@ GameBeamStatus game_beam_submit(GameBeam *beam, const GameDetectionFrame *frame,
 GameBeamStatus game_beam_tick(GameBeam *beam, uint64_t now_ms);
 const GameBeamSnapshot *game_beam_snapshot(const GameBeam *beam);
 /* Copy the current or bounded last committed display version. A retained
- * version has valid=0/display_stale=1/success=0 and keeps ORIGINAL frame stamps.
+ * version has valid=0/display_stale=1/success=0 and keeps ORIGINAL frame stamps
+ * and ray brightness. All invalid input uses display_timeout_ms; the separate
+ * display_dropout_ms still gates admission of an actually missing subset.
  * Caller must pair it with the saved camera pixels of that same sequence. */
 int game_beam_display_snapshot(const GameBeam *beam, uint64_t now_ms,
                                 GameBeamSnapshot *snapshot);
+/* Last committed model/ray for a persistent display hold until the next
+ * commit or explicit reset/reconfigure. Always valid=0/display_stale=1/success=0;
+ * never refreshes its original stamps or mutates the current observation.
+ * A live-camera caller must distinguish the camera and retained scene stamps.
+ * This copy is presentation only and must never be published as a new pose. */
+int game_beam_retained_snapshot(const GameBeam *beam, GameBeamSnapshot *snapshot);
 const char *game_beam_status_name(GameBeamStatus status);
 /* Draw only into an already-owned CPU canvas/background. No clearing, MMIO,
  * solving, scaling, device acquisition or game state mutation. The snapshot
- * may be a dim display-only copy returned by game_beam_display_snapshot. */
+ * may be a constant-brightness display-only copy returned by
+ * game_beam_display_snapshot. */
 int game_beam_render(const GameBeamSnapshot *snapshot, const VisionCanvas *canvas);
 
 #ifdef __cplusplus

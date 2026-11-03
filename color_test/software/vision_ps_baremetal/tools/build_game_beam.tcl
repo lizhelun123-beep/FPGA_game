@@ -77,7 +77,7 @@ set common_flags [list -std=gnu99 -mcpu=cortex-a9 -mfpu=vfpv3 -mfloat-abi=hard -
 # Canonical detector and beam core. Never glob Linux menu/worker/main sources.
 set sources {}
 foreach name {game_beam ray_game game_scene_adapter vision_stabilizer vision_ps \
-    green_target_detector vision_overlay game_linux_capture game_linux_display ov5640 scene_protocol} {
+    green_target_detector vision_overlay game_linux_capture game_linux_display ov5640 beam_pose_protocol beam_control_protocol beam_control_state beam_uart_log beam_wire_protocol} {
     lappend sources [file join $src ${name}.c]
 }
 lappend sources [file join $src i2c PS_i2c.c] [file join $generated game_beam_config.c]

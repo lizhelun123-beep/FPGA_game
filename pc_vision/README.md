@@ -1,5 +1,15 @@
 # PC 颜色与 marker 视觉原型
 
+2026-10-30当前电脑优化：共享运行层 `20261030-pc-responsive-7`，网页 `20261030-web-responsive-6`。用户允许放宽门槛后，唯一JSON的场景/计分准入为600ms（原350ms）；校时250ms、板端B350ms不变。按本关必需类别适配真实观测，额外无关物块不再阻塞提交，缺失/重复/无效/旧会话继续拒绝。重启电脑后台并刷新网页生效，现用version14 BOOT保持不变。下文旧版本号及350ms描述是历史记录。
+
+当前正式串口协议已升级为**v3二进制**，电脑build=`20261028-binary-v3-350-6`，须与version14 BOOT成对更新。BOOT：`color_test/build/beam_standalone/restored_binary_v3_1/output/BOOT.BIN`；配套上位机包：`output/build/game_app/web_sync350_1/web_upper_sync350.zip`。两端均不再使用v2 ASCII数据流，字段见[串口协议](SERIAL_PROTOCOL.md)，Godot启动见[当前入口](godot/README.md)。网页入口`pc_vision(1)/pc_vision/start_game.ps1`直接复用同一新串口运行层。原始帧时序、350ms计分准入、PortalB对齐和运行中整帧保留继续生效。以下旧入口/版本说明保留作历史。
+
+电脑串口游戏最新为`20261028-portal-b-aligned-4`：开始计时后保留上一份完整实测场景，新场景就绪时整帧替换；遮挡/漏检/等待更新不先清空，模型保持亮度。切关/菜单清理，旧场景保持原始时间与序号且不参与通关。新姿态立即唤醒呈现，周期处理最长10ms；现有version13 BOOT继续使用，重启Python桥接与Godot应用本次更新。更新包见[Godot说明](godot/README.md)。
+
+当前恢复版的正式串口/Godot入口为 `python -m pc_vision.godot_bridge --serial COM9 --godot .\output\tools\godot\Godot_v4.7.2-stable_win64_console.exe`，需板端新POSE2固件；本机USB-UART已核对为COM9，其他电脑先用 `python -m pc_vision.godot_bridge --list-ports` 枚举再明确指定端口，关闭XCOM等串口助手的连接。15格选关全部显示内容并可选择，前三关使用旧布局与固定逻辑光源，后12关为已保存的随机布局，不保证可解。只读主机检查为 `python -m pc_vision.godot_bridge --check`。完整说明见[Godot上位机](godot/README.md)。电脑消费板端已确认的旧彩色物块姿态，不在PC重做AprilTag识别或再次平滑；下文scene-v1/GameView为旧调试入口，不能用于新POSE2固件。
+
+实时关卡会话按 `LEVEL2 → READY2 → START2 → STARTED2 → POSE2` 推进，`SYNC2`独立周期校时，关卡命令优先。选关时上位机发送本关光源点、方向、代次和随机数；板端新光源画面通过显示栅栏后返回 `READY2`，电脑才启用“开始计时”，收到 `STARTED2` 后才启动计时并接收姿态。控制行和回应均带 CRC32，旧代次、旧随机数或未获许可的姿态会被丢弃。超时从完整实际发送完成起计算，2秒重试、最多3次。当前配套version13整合版：`color_test/build/beam_standalone/restored_integrated_1/output/BOOT.BIN`，包含version12 Portal修正和完整握手；旧version10不支持此握手。板卡启动后可运行 `& .\pc_vision\start_game.ps1 -SerialPort COM9`，自动记录真实TX/RX至`pc_vision/output/serial/`。
+
 独立于 `color_test/` 的 Python + OpenCV 原型。支持图片、USB 摄像头、视频文件。识别 MIRROR、PORTAL_A、PORTAL_B、TARGET、SOURCE、WALL；无神经网络、YOLO、OCR、ArUco 或多边形顶点数分类。
 
 ## 板载定位＋电脑实时游戏

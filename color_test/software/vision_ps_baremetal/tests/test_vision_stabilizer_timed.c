@@ -176,7 +176,7 @@ static void test_adaptive_filter_and_time(void)
 
 static void test_ambiguity_and_reacquisition(void)
 {
-    VisionTimedStabilizer s, saved;
+    VisionTimedStabilizer s, saved, duplicate_b;
     VisionTimedStatus status;
     VisionDetection values[VISION_MAX_DETECTIONS];
     unsigned int bit = 1U << VISION_PORTAL_A;
@@ -196,6 +196,13 @@ static void test_ambiguity_and_reacquisition(void)
     CHECK(vision_stabilizer_update_timed(&s, values, 2, 220, VISION_STABILITY_B,
                   values, VISION_MAX_DETECTIONS, &status) == 0);
     CHECK((status.missing_mask & bit) && !status.supported_mask);
+    /* Portal B fallback candidates obey the same unique-identity boundary:
+     * two orange carriers must remain missing rather than selecting either. */
+    vision_stabilizer_timed_reset(&duplicate_b);
+    values[0] = values[1] = pose(VISION_PORTAL_B, 100, 0);
+    CHECK(vision_stabilizer_update_timed(&duplicate_b, values, 2, 225, VISION_STABILITY_B,
+                  values, VISION_MAX_DETECTIONS, &status) == 0);
+    CHECK((status.missing_mask & (1U << VISION_PORTAL_B)) && !status.supported_mask);
     values[0] = pose(VISION_PORTAL_A, 100, 0);
     values[0].axis_x = NAN;
     CHECK(vision_stabilizer_update_timed(&s, values, 1, 230, VISION_STABILITY_B,
@@ -214,12 +221,36 @@ static void test_ambiguity_and_reacquisition(void)
     CHECK(memcmp(&saved, &s, sizeof(s)) == 0);
 }
 
+static void test_mirror_portal_b_support_gap_500(void)
+{
+    const unsigned gaps[] = {400U, 500U, 501U};
+    unsigned i;
+    for (i = 0; i < sizeof(gaps)/sizeof(gaps[0]); ++i) {
+        VisionTimedStabilizer s;
+        VisionTimedStatus status;
+        VisionDetection raw[2], out[VISION_MAX_DETECTIONS];
+        unsigned mask = (1U << VISION_MIRROR) | (1U << VISION_PORTAL_B);
+        raw[0] = pose(VISION_MIRROR, 100, 0);
+        raw[1] = pose(VISION_PORTAL_B, 300, 90);
+        vision_stabilizer_timed_reset(&s);
+        CHECK(vision_stabilizer_update_timed_gap(&s, raw, 2, 1000,
+              VISION_STABILITY_B, out, VISION_MAX_DETECTIONS, &status, 500) == 0);
+        CHECK(status.pending_mask == mask);
+        CHECK(vision_stabilizer_update_timed_gap(&s, raw, 2, 1000+gaps[i],
+              VISION_STABILITY_B, out, VISION_MAX_DETECTIONS, &status, 500) ==
+              (gaps[i] <= 500U ? 2 : 0));
+        CHECK((gaps[i] <= 500U ? status.supported_mask : status.pending_mask) == mask);
+        CHECK(status.captured_ms == 1000+gaps[i]);
+    }
+}
+
 int main(void)
 {
     test_hysteresis_motion();
     test_axis_equivalence();
     test_adaptive_filter_and_time();
     test_ambiguity_and_reacquisition();
+    test_mirror_portal_b_support_gap_500();
     printf("PASS timed stabilizer: %u checks (controlled host inputs only)\n", checks);
     return 0;
 }

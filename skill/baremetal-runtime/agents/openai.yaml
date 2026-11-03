@@ -1,0 +1,4 @@
+interface:
+  display_name: "Standalone 裸板运行"
+  short_description: "检查裸板启动、单调时钟、串口、缓存和异常恢复，保持平台边界明确"
+  default_prompt: "使用 $baremetal-runtime 检查此裸板入口和故障恢复路径。"

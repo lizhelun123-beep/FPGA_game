@@ -85,4 +85,15 @@ int vision_stabilizer_update_timed(VisionTimedStabilizer *stabilizer,
                                    VisionDetection *output, int capacity,
                                    VisionTimedStatus *status);
 
+/* 使用同一时序稳定算法，显式指定 250、350 或 500ms 连续观测支持间隔。
+ * This controls reacquisition only: missing input still emits no old pose,
+ * and captured_ms, confirmation delays and deadbands retain their meanings.
+ * The original entry point keeps its historical 250ms policy. */
+int vision_stabilizer_update_timed_gap(VisionTimedStabilizer *stabilizer,
+                                   const VisionDetection *raw, int count,
+                                   uint64_t captured_ms, int algorithm,
+                                   VisionDetection *output, int capacity,
+                                   VisionTimedStatus *status,
+                                   unsigned support_gap_ms);
+
 #endif

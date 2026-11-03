@@ -1,4 +1,4 @@
 interface:
-  display_name: "采集与显示的 FPGA 验证门"
-  short_description: "为阻塞实时采集或 HDMI 的 PL 问题选择最小验证，保留证据边界"
-  default_prompt: "使用 $fpga-verification-gates 检查当前阻塞采集或 HDMI 的 PL 改动，按已有证据选择最便宜的验证并保留未通过项。"
+  display_name: "FPGA 定向验证"
+  short_description: "为 AXI、视频、复位或时序问题选择最小反例，区分仿真与实际执行范围"
+  default_prompt: "使用 $fpga-verification-gates 为当前 PL 问题设计最小可证伪检查。"

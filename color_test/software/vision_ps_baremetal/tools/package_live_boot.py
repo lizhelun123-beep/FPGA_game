@@ -79,7 +79,7 @@ def bit_payload(path):
     return b"".join(raw[i:i+4][::-1] for i in range(0, len(raw), 4))
 
 
-def verify_boot(boot, fsbl, bit, app):
+def verify_boot(boot, fsbl, bit, app, required_symbols=None):
     data = boot.read_bytes()
 
     def word(offset):
@@ -94,7 +94,9 @@ def verify_boot(boot, fsbl, bit, app):
     assert partitions == word(0x9c)
     fsbl_bytes, fsbl_info, _ = elf_info(fsbl)
     app_bytes, app_info, symbols = elf_info(app)
-    for name in ("scene_stream_poll", "scene_stream_publish", "vision_detect_bgr888", "ray_game_trace"):
+    if required_symbols is None:
+        required_symbols = ("scene_stream_poll", "scene_stream_publish", "vision_detect_bgr888", "ray_game_trace")
+    for name in required_symbols:
         assert name in symbols, f"Missing linked live/camera symbol: {name}"
     expected = [(fsbl, fsbl_bytes, fsbl_info, 0x10),
                 (bit, bit_payload(bit), dict(entry=0, load_address=0), 0x20),

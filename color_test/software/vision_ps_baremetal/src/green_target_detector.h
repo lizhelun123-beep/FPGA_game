@@ -14,6 +14,11 @@
 int green_target_detect_bgr888(const uint8_t *frame, uint32_t width,
                                uint32_t height, uint32_t stride,
                                VisionDetection *output, int output_capacity);
+/* Reuse the current frame's already-denoised sampled HSV mask. No second
+ * pixel scan/HSV pass and no second morphology; geometry is identical. */
+int green_target_detect_mask(const uint8_t *mask, uint8_t bit, uint32_t width,
+                              uint32_t height, VisionDetection *output,
+                              int output_capacity);
 
 #endif
 

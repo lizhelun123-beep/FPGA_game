@@ -427,3 +427,276 @@ int vision_stabilizer_update(VisionStabilizer *stabilizer,
     }
     return output_count;
 }
+
+/* These are explicitly uncalibrated camera-pixel preview parameters. They
+ * apply only to the opt-in API, not the historical baremetal stabilizer. */
+#define TIMED_DEAD_POSITION 0.75f
+#define TIMED_DEAD_ANGLE 0.25f
+#define TIMED_RELEASE_POSITION 1.5f
+#define TIMED_RELEASE_ANGLE 0.75f
+#define TIMED_CANDIDATE_POSITION 1.5f
+#define TIMED_CANDIDATE_ANGLE 0.75f
+#define TIMED_SUPPORT_GAP_MS 250U
+#define TIMED_ACQUIRE_MS 100U
+#define TIMED_FAST_CONFIRM_MS 60U
+#define TIMED_SLOW_CONFIRM_MS 120U
+
+static int timed_valid(const VisionDetection *d)
+{
+    float x, y, magnitude;
+    if (!d || track_slot(d->type) < 0 ||
+        !isfinite(center_x(d)) || !isfinite(center_y(d)) ||
+        center_x(d) < 0 || center_x(d) > 1279 ||
+        center_y(d) < 0 || center_y(d) > 719 ||
+        !isfinite(d->major_length) || !isfinite(d->minor_width) ||
+        d->major_length <= 1 || d->minor_width <= 1 ||
+        d->major_length > 16384 || d->minor_width > 16384)
+        return 0;
+    if (d->type == VISION_TARGET) return 1;
+    if (d->type == VISION_SOURCE && !d->direction_valid) return 0;
+    detection_direction(d, &x, &y);
+    magnitude = hypotf(x, y);
+    return isfinite(x) && isfinite(y) && isfinite(magnitude) &&
+           magnitude > 1.0e-6f;
+}
+
+static VisionDetection timed_normalized(const VisionDetection *d)
+{
+    VisionDetection result = *d;
+    float x, y, magnitude;
+    if (d->type == VISION_TARGET) { x = 1; y = 0; }
+    else {
+        detection_direction(d, &x, &y);
+        magnitude = hypotf(x, y);
+        x /= magnitude; y /= magnitude;
+    }
+    result.axis_x = x; result.axis_y = y;
+    result.angle_deg = (int)lroundf(atan2f(y, x)*180.0f/PI_F);
+    result.geometry_center_x = center_x(d);
+    result.geometry_center_y = center_y(d);
+    result.center_x = (int)lroundf(result.geometry_center_x);
+    result.center_y = (int)lroundf(result.geometry_center_y);
+    if (d->type == VISION_SOURCE) {
+        result.source_direction_x = x; result.source_direction_y = y;
+    }
+    return result;
+}
+
+static int timed_unique(const VisionDetection *raw, int count, VisionType type)
+{
+    int i, matches = 0, selected = -1;
+    for (i = 0; i < count; ++i) {
+        if (raw[i].type != type) continue;
+        /* An invalid duplicate still makes identity ambiguous. */
+        ++matches;
+        if (timed_valid(&raw[i])) selected = i;
+    }
+    return matches == 1 ? selected : -1;
+}
+
+static float timed_angle(const VisionDetection *a, const VisionDetection *b)
+{
+    if (a->type == VISION_TARGET) return 0;
+    return angle_difference(a, b, is_directed(a->type));
+}
+
+static int timed_deadband(const VisionDetection *a, const VisionDetection *b)
+{
+    return position_distance(a, b) <= TIMED_DEAD_POSITION &&
+           timed_angle(a, b) <= TIMED_DEAD_ANGLE &&
+           pose_size_ratio(a, b) <= 1.01f;
+}
+
+static int timed_candidate_matches(const VisionDirectionTrack *track,
+                                    const VisionDetection *candidate)
+{
+    int i;
+    for (i = 0; i < track->sample_count; ++i)
+        if (position_distance(&track->samples[i], candidate) > TIMED_CANDIDATE_POSITION ||
+            timed_angle(&track->samples[i], candidate) > TIMED_CANDIDATE_ANGLE ||
+            pose_size_ratio(&track->samples[i], candidate) > 1.03f)
+            return 0;
+    return 1;
+}
+
+static int timed_hysteresis(VisionDirectionTrack *track, VisionTimedTrack *timing,
+                            const VisionDetection *current, uint64_t now)
+{
+    unsigned int delay = TIMED_ACQUIRE_MS;
+    if (track->active && timed_deadband(&track->confirmed, current)) {
+        track->sample_count = timing->have_candidate = 0;
+        return 1;
+    }
+    if (!timing->have_candidate || !timed_candidate_matches(track, current)) {
+        track->sample_count = 0;
+        timing->candidate_since_ms = now;
+        timing->have_candidate = 1;
+    }
+    if (track->sample_count == VISION_STABILIZER_MAX_SAMPLES) {
+        memmove(track->samples, track->samples+1,
+                (VISION_STABILIZER_MAX_SAMPLES-1)*sizeof(track->samples[0]));
+        --track->sample_count;
+    }
+    track->samples[track->sample_count++] = *current;
+    if (track->active) {
+        delay = position_distance(&track->confirmed, current) >= TIMED_RELEASE_POSITION ||
+                timed_angle(&track->confirmed, current) >= TIMED_RELEASE_ANGLE ||
+                pose_size_ratio(&track->confirmed, current) >= 1.04f ?
+                TIMED_FAST_CONFIRM_MS : TIMED_SLOW_CONFIRM_MS;
+    }
+    if (track->sample_count < 2 || now-timing->candidate_since_ms < delay)
+        return 0;
+    track->confirmed = aggregate_samples(track);
+    /* The shared legacy aggregator also marks Portal direction_valid; timed
+     * scene-v1 output keeps that field SOURCE-only and carries Portal by axis. */
+    if (current->type != VISION_SOURCE)
+        track->confirmed.direction_valid = current->direction_valid;
+    track->active = 1;
+    track->sample_count = timing->have_candidate = 0;
+    ++track->commit_count;
+    return 1;
+}
+
+static float timed_alpha(float cutoff, float dt)
+{
+    return 1.0f/(1.0f+1.0f/(2.0f*PI_F*cutoff*dt));
+}
+
+static void timed_filter(VisionDirectionTrack *track, VisionTimedTrack *timing,
+                         const VisionDetection *current, uint64_t now)
+{
+    VisionDetection result = *current;
+    float dt = (float)(now-timing->observed_ms)*0.001f;
+    float speed_alpha;
+    float position_alpha, angle_alpha, old_angle, new_angle, delta, period;
+    if (!track->active) {
+        track->confirmed = *current;
+        track->active = 1;
+        ++track->commit_count;
+        return;
+    }
+    speed_alpha = timed_alpha(1.0f, dt);
+    timing->position_speed += speed_alpha*
+        (position_distance(&timing->previous_raw, current)/dt-timing->position_speed);
+    timing->angular_speed += speed_alpha*
+        (timed_angle(&timing->previous_raw, current)/dt-timing->angular_speed);
+    position_alpha = timed_alpha(1.2f+0.03f*timing->position_speed, dt);
+    angle_alpha = timed_alpha(1.5f+0.05f*timing->angular_speed, dt);
+    result.geometry_center_x = center_x(&track->confirmed)+position_alpha*
+                               (center_x(current)-center_x(&track->confirmed));
+    result.geometry_center_y = center_y(&track->confirmed)+position_alpha*
+                               (center_y(current)-center_y(&track->confirmed));
+    result.center_x = (int)lroundf(result.geometry_center_x);
+    result.center_y = (int)lroundf(result.geometry_center_y);
+    result.bbox_x = result.center_x-result.bbox_w/2;
+    result.bbox_y = result.center_y-result.bbox_h/2;
+    result.major_length = track->confirmed.major_length+position_alpha*
+                         (current->major_length-track->confirmed.major_length);
+    result.minor_width = track->confirmed.minor_width+position_alpha*
+                        (current->minor_width-track->confirmed.minor_width);
+    old_angle = atan2f(track->confirmed.axis_y, track->confirmed.axis_x);
+    new_angle = atan2f(current->axis_y, current->axis_x);
+    period = is_directed(current->type) ? 2.0f*PI_F : PI_F;
+    delta = new_angle-old_angle;
+    while (delta > period*0.5f) delta -= period;
+    while (delta < -period*0.5f) delta += period;
+    old_angle += angle_alpha*delta;
+    result.axis_x = cosf(old_angle); result.axis_y = sinf(old_angle);
+    result.angle_deg = (int)lroundf(old_angle*180.0f/PI_F);
+    if (current->type == VISION_SOURCE) {
+        result.source_direction_x = result.axis_x;
+        result.source_direction_y = result.axis_y;
+        result.source_tip_x = (int)lroundf((float)track->confirmed.source_tip_x+
+                             position_alpha*(float)(current->source_tip_x-track->confirmed.source_tip_x));
+        result.source_tip_y = (int)lroundf((float)track->confirmed.source_tip_y+
+                             position_alpha*(float)(current->source_tip_y-track->confirmed.source_tip_y));
+    }
+    track->confirmed = result;
+    ++track->commit_count;
+}
+
+void vision_stabilizer_timed_reset(VisionTimedStabilizer *stabilizer)
+{
+    if (stabilizer) {
+        memset(stabilizer, 0, sizeof(*stabilizer));
+        stabilizer->algorithm = -1;
+    }
+}
+
+int vision_stabilizer_update_timed(VisionTimedStabilizer *stabilizer,
+                                   const VisionDetection *raw, int count,
+                                   uint64_t captured_ms, int algorithm,
+                                   VisionDetection *output, int capacity,
+                                   VisionTimedStatus *status)
+{
+    return vision_stabilizer_update_timed_gap(stabilizer,raw,count,captured_ms,
+               algorithm,output,capacity,status,TIMED_SUPPORT_GAP_MS);
+}
+
+int vision_stabilizer_update_timed_gap(VisionTimedStabilizer *stabilizer,
+                                   const VisionDetection *raw, int count,
+                                   uint64_t captured_ms, int algorithm,
+                                   VisionDetection *output, int capacity,
+                                   VisionTimedStatus *status,
+                                   unsigned support_gap_ms)
+{
+    VisionDetection copy[VISION_MAX_DETECTIONS];
+    int slot, output_count = 0;
+    if (!status) return -1;
+    memset(status, 0, sizeof(*status));
+    status->captured_ms = captured_ms;
+    if (!stabilizer || count < 0 || count > VISION_MAX_DETECTIONS ||
+        (count && !raw) || !output || capacity < VISION_STABILIZER_TRACK_COUNT ||
+        capacity > VISION_MAX_DETECTIONS ||
+        (support_gap_ms != 250U && support_gap_ms != 350U && support_gap_ms != 500U) ||
+        (algorithm != VISION_STABILITY_A && algorithm != VISION_STABILITY_B))
+        return -1;
+    if (stabilizer->have_capture && captured_ms <= stabilizer->last_capture_ms)
+        return 0;
+    if (count) memcpy(copy, raw, (size_t)count*sizeof(copy[0]));
+    if (!stabilizer->have_capture || algorithm != stabilizer->algorithm) {
+        vision_stabilizer_timed_reset(stabilizer);
+        stabilizer->algorithm = algorithm;
+    }
+    stabilizer->have_capture = status->timestamp_accepted = 1;
+    stabilizer->last_capture_ms = captured_ms;
+    ++stabilizer->poses.frames;
+    for (slot = 0; slot < VISION_STABILIZER_TRACK_COUNT; ++slot) {
+        VisionDirectionTrack *track = &stabilizer->poses.tracks[slot];
+        VisionTimedTrack *timing = &stabilizer->timing[slot];
+        unsigned int bit = 1U << (unsigned int)slot;
+        unsigned int commits = track->commit_count;
+        int selected = timed_unique(copy, count, (VisionType)slot);
+        VisionDetection current;
+        if (timing->have_observation &&
+            captured_ms-timing->observed_ms > support_gap_ms) {
+            memset(track, 0, sizeof(*track));
+            memset(timing, 0, sizeof(*timing));
+            commits = 0;
+        }
+        if (selected < 0) {
+            track->sample_count = timing->have_candidate = 0;
+            ++track->missed_frames;
+            status->missing_mask |= bit;
+            continue;
+        }
+        current = timed_normalized(&copy[selected]);
+        ++track->raw_observations;
+        ++track->valid_samples;
+        track->missed_frames = 0;
+        if (algorithm == VISION_STABILITY_A) {
+            timed_filter(track, timing, &current, captured_ms);
+            status->supported_mask |= bit;
+        } else if (timed_hysteresis(track, timing, &current, captured_ms)) {
+            status->supported_mask |= bit;
+        } else {
+            status->pending_mask |= bit;
+        }
+        timing->previous_raw = current;
+        timing->observed_ms = captured_ms;
+        timing->have_observation = 1;
+        if (commits != track->commit_count) status->committed_mask |= bit;
+        if (status->supported_mask & bit) output[output_count++] = track->confirmed;
+    }
+    return output_count;
+}

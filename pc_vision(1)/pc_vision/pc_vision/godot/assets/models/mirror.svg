@@ -1,0 +1,19 @@
+<svg data-model-length="140" data-model-width="12" xmlns="http://www.w3.org/2000/svg" width="148" height="20" viewBox="-74 -10 148 20">
+  <title>Gold-framed mirror, zero-degree pose</title>
+  <desc>Transparent sprite centered at 0,0, pixel 74,10. The 140-unit finite reflective surface lies on y=0, x=-70 through 70. Decorative frame does not change reflection geometry.</desc>
+  <defs>
+    <linearGradient id="gold" x1="0" y1="-6" x2="0" y2="6" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE59A"/><stop offset="0.42" stop-color="#EDBA54"/><stop offset="1" stop-color="#C28932"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="-3" x2="0" y2="3" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ECFFFF"/><stop offset="0.5" stop-color="#BCEAF2"/><stop offset="1" stop-color="#7DC6DA"/>
+    </linearGradient>
+  </defs>
+  <rect x="-70" y="-6" width="140" height="12" rx="4.2" fill="url(#gold)" stroke="#705038" stroke-width="2"/>
+  <rect x="-65" y="-3.1" width="130" height="6.2" rx="1.7" fill="url(#glass)"/>
+  <path d="M-70 0H70" stroke="#F9FFFF" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M-48 2-42-2M-39 2-33-2M27 2 33-2M36 2 42-2" stroke="#FFFFFF" stroke-width="1.4" opacity="0.85"/>
+  <path d="M-62-4.4H56" stroke="#FFF3BE" stroke-width="0.9" stroke-linecap="round"/>
+  <path d="M-61 4.4H60" stroke="#AA702E" stroke-width="0.9" stroke-linecap="round" opacity="0.65"/>
+  <circle cx="-67" cy="0" r="1.15" fill="#FFF3C9"/><circle cx="67" cy="0" r="1.15" fill="#FFF3C9"/>
+</svg>

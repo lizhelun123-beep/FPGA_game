@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#141c22">
+  <title>光路实验室 · 三维光路游戏</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cellipse cx='24' cy='24' rx='13' ry='20' fill='%23141c22' stroke='%2305c9ff' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}
+  </script>
+</head>
+<body>
+  <main id="app">
+    <div id="viewport" aria-label="三维光路场景，拖动旋转视角，滚轮缩放"></div>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><div><h1>光路实验室</h1></div></div>
+      <div class="program-controls"><a class="quiet-button" href="/teaching" target="_blank" rel="noopener">教学预览</a><div class="mode"><i aria-hidden="true"></i><span id="connection-label">正在连接</span></div><button data-action="quit" class="quiet-button">结束程序</button></div>
+    </header>
+    <section id="menu" class="selection-screen" aria-label="选择关卡">
+      <div class="selection-heading"><h2>选择实验关卡</h2><p class="selection-hint">悬停关卡查看自动演示</p></div>
+      <div id="level-grid" class="level-grid"></div>
+    </section>
+    <section class="scene-label" aria-label="当前场景" hidden>
+      <div><span id="chamber-number">01</span><span class="label-line"></span><span id="scene-name"></span></div>
+    </section>
+    <section id="game-hud" hidden>
+      <div class="game-actions"><span id="preview-label" hidden>展示关卡</span><span id="timer">03:00</span><button data-action="menu" class="quiet-button">返回选关</button><button id="skip-game" data-action="skip" class="quiet-button">跳过</button></div>
+      <div class="game-status"><span id="game-status-text" role="status"></span><button id="start-game" data-action="start" class="primary-button" disabled>开始计时</button></div>
+      <footer class="bottom-bar">
+        <div class="description"><div class="description-title"><span class="small-dot"></span><h2 id="level-title"></h2></div></div>
+        <div class="legend" aria-label="光路图例"><span><i class="laser"></i>光束</span><span><i class="portal-blue"></i>传送门 A</span><span><i class="portal-orange"></i>传送门 B</span></div>
+        <p class="controls-hint"><svg viewBox="0 0 24 28" aria-hidden="true"><rect x="4" y="2" width="16" height="24" rx="8"/><path d="M12 3v8M4 12h16"/></svg><span>拖动旋转视角<span class="hint-divider">·</span>滚轮缩放</span></p>
+      </footer>
+    </section>
+    <section id="result" class="result-screen" aria-label="关卡结算" hidden><div class="result-card"><span class="eyebrow">EXPERIMENT COMPLETE</span><h2 id="result-title"></h2><div id="result-stars" aria-label="星级"></div><p id="result-time"></p><div class="result-actions"><button data-action="menu" class="quiet-button">返回选关</button><button data-action="skip" class="primary-button">下一关</button></div></div></section>
+    <div id="notice" role="status" hidden></div>
+    <div id="loading" role="status"><span class="loading-ring"></span><p>正在加载实验室</p></div>
+    <div id="error" role="alert" hidden><h2>场景未能加载</h2><p id="error-message"></p><div class="error-actions"><button id="error-menu" class="primary-button">返回菜单</button><button id="error-reload" class="quiet-button">重新加载</button><button data-action="quit" class="quiet-button">结束程序</button></div></div>
+    <div id="program-ended" role="status" hidden><h2 id="program-ended-title">正在结束程序</h2><p id="program-ended-message">正在关闭后台并释放电脑串口…</p></div>
+  </main>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

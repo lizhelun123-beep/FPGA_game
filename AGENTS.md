@@ -1,88 +1,110 @@
 # AGENTS.md
 
-## 目标与权威
-- 唯一规范工程：当前 Windows 仓库；不复制工程、不新建并行检测器/渲染器/配置。
-- 目标：AX7Z020B + AN5641/OV5640，摄像头实物类别/位置/方向 → C 场景与光路 → HDMI 纯虚拟中文游戏；USB HOST 有线 HID 鼠标操作菜单。
-- 路线：现有 Linux/PYNQ + 原生 C/C++ + 离线预渲染二维素材 + 现有 PL 采集/HDMI。复用已有镜像、C 检测器、ray_game；不改裸机、不重建内核/rootfs、不开发 PL 游戏绘图。
-- 用户最新明确决定优先。当前状态/失败次数/唯一下一步只认 PROJECT_STATE.md；完整首版约定在其 Board Game First Release Contract，冲突时查该节最新确认。
-- 交付顺序：独立显示基线 B/C（静图、原生模式、两图切换）→ Linux 素材游戏与鼠标菜单 → 摄像头定位恢复及同板闭环。摄像头采集闭合不是虚拟游戏显示的前置条件。PC/mock/旧制品/单模块通过不等于实板验收；五天是期望，不是保证。
+## 目标与范围
 
-## 首版不变量
-- 手移/旋转实物，沿用现有标记识别及类别/位置/方向语义，不新增实体标记或识别模式；鼠标不拖模型、不替代定位。
-- 显示：非触摸，最终 HDMI 输出 1280×720/16:9，卡通、中文、大按钮、倒计时、星级；最终无相机预览。现有16:10面板保持真实物理属性，画面等比显示、不拉伸；1280×800不再是交付要求。采集独立保留两 lane、1280×720 RAW10/BGGR；显示布局不能改传感器/CSI 模式。
-- 模板 sample_photo/075.png、076.png、077.png：第1关 SOURCE rotate_only；第2关 PORTAL_A/B free；第3关 MIRROR free；其余 fixed。077 可未解，禁止改模板/检测/求解器强行通关。
-- 准备不计时；新鲜有效且未通关场景由玩家明确开始。每关180s；命中 TARGET 且用时<60/<120/<180s分别3/2/1星；≥180s超时0星。可跳关；无锁关、持久化、重置按钮、声音。
-- 最多6模型、5可见光线段；SOURCE/TARGET/MIRROR/WALL/PORTAL_A/PORTAL_B，不要求每关全部出现。不截断求解结果制造通关，保留求解器安全容量。
-- A3灰色白边区域为参考；纸面/采集/游戏/显示坐标明确映射、保持比例；不捏造角点、不拉伸铺屏。渲染和求解消费同一有效模型，固定锚点不漂移；中心/方向变化时重算光源尖端与镜面端点。
-- 计时用单调时钟；模型/光线/关卡代次/成绩一致提交。按现有配置处理新鲜度；短遮挡只可受限保留显示，过期/缺失/旧关卡观测不能通关。不得延长有效期掩盖低吞吐。
+- 2026-10-29 PYNQ硬件编排：在仅迁移version14板端的边界内，新增`pynq_vision/beam_hardware.py`单所有者，Python3.6实际负责Overlay/MMIO/GPIO、原相机参数、检查型非缓存三槽分配/生命周期及调度；C继续负责检测/B/Portal/v3/保持，并通过Python平台回调复用原C显示退休状态机。`beam_launcher.py`与`notebooks/beam_v14_pynq.ipynb`共用Session。运行候选包=`output/build/game_app/pynq_beam_runtime_latest/pynq_beam_runtime.zip`，SHA256`5c28e923046c90a5cef3d9c3fefe81fe24fa296d3cc7927311e1f3a49138305b`；ARM库来自`pynq_beam_hw_c_3`，派生硬件输入=`pynq_beam_hardware_3`。24项host、11模块/4Notebook单元Python3.6语法、ARM ABI/GLIBC及独立解包校验通过；真实PYNQ/Overlay/DMA/HDMI/UART均NOT_RUN。运行前检查内核console、现有UART FD和目标getty，C打开时再用O_NOCTTY/flock/TIOCEXCL；不停止服务、不改启动参数。运行须有当前boot受保护准入及实际设备确认，旧DMA拒绝入口不变；无自动服务/控制台/SD/BOOT修改。电脑网页/后台/权威游戏会话继续留在电脑，串口v3不变；下条NOT_BOUND为此前C入口阶段状态。详见`color_test/software/vision_ps_baremetal/PYNQ_BEAM.md`。
 
-## 显示基线与最小实现路线
-- 分开验收 A 纯 PL 彩条、B PS/DDR→VDMA→HDMI、C SD 素材→DDR→HDMI、D MIPI→CSI-2→VDMA 采集；D 可后续恢复，不永久删除。A 是可选链路诊断，不作为 B/C 的必经门槛，已有停止额度保留。
-- 当前推荐优先复用规范工程已有 B 显示结构，以同板 ALINX SD-HDMI 流程为 C 的参考；这是路线选择，不表示旧 BOOT/BIT 或当前显示链已经合格。旧成功画面只证明技术可行性，仍须核准同版源码、制品、所用路径报告和实板身份。
-- PS 在启动时从 SD 文件加载素材到 DDR，先单张静图、最终1280×720，再安全两图切换及既有 C 合成/交互；PL 保留必要传输和视频输出。无需先开发 PL 实时游戏绘图、图层混合或光路加速；后续加速须有可度量收益。
-- 现有 Linux/PYNQ 继续保留；裸机 FatFs/BSP/固定地址/cache 示例仅供流程参考，不直接搬入 Linux，不以改 BOOT/内核/rootfs 作为默认捷径。网页 AX7020 管脚不能替代 AX7Z020B 原理图及实现 I/O 核准。
-- 1280×720是最终显示规格；已有720p证据仅在原验证范围内复用，不自动证明原生720布局、完整游戏及启动恢复通过。所用显示范围的时钟/复位、时序、CDC、DRC、资源、缓存/所有权、停机和启动验收保留；不得用范围解耦掩盖仍活动逻辑的违例。具体事实与下一步只认 PROJECT_STATE.md 及其诊断证据。
+- 2026-10-29 迁移边界更正与C入口：用户明确仅将version14板端从裸板等价迁移到Linux/PYNQ；电脑原串口后台、Web服务、C游戏会话和Three.js网页留在电脑，不要求板卡联网，不增加HLS/PL功能或桌面App。本步新增`src/pynq/beam_pynq.*`、POSIX时钟/UART及`pynq_vision/beam_runtime.py`，复用原C检测/B/Portal/协议/保持，生成`output/build/game_app/pynq_beam_c_3/libbeam_pynq.so`。ARM硬浮点/镜像GLIBC2.27版本需求检查及9项新host测试通过；真实PYNQ采集/显示owner尚未绑定，命令行仅支持CPU检查，旧DMA准入门槛不绕过。不得把库编译通过写成PYNQ完整游戏通过。入口/接口/构建见`color_test/software/vision_ps_baremetal/PYNQ_BEAM.md`。原BOOT、PL、JSON及电脑运行源码不变。本条覆盖下面迁移准备记录中“完整游戏会话/Web迁板”的旧建议。
 
-## 显示、Linux 与 DMA
-- PC 离线生成背景/离散姿态 Sprite，按实物外形与朝向；SD 启动时一次加载到 DDR，ARM 用既有 BGR888 画布、矩形复制、色键/掩码合成。无逐帧读 SD、实时3D、自由旋转/PNG/Alpha强制要求或预设60FPS。
-- 图层：背景 → 模型 → 光线/区域内特效 → 菜单/计时/结算 → 光标；透明区不遮挡，特效裁剪 A3；姿态量化不能改光路几何/命中。相机是否保留整帧由检测决定，不复制原图作游戏背景。
-- 复用现有 display VDMA 与安全复制/切换机制；采集与显示分别管理尺寸、stride、缓冲。素材不是 DMA 缓冲；禁止写活动扫描缓冲，不新增默认显示 DMA/内核驱动。
-- DMA 明确尺寸/stride/活动行字节/span/范围/对齐/帧号及 CPU/设备所有权；以实际驱动证明地址、缓存同步与排序，指针/volatile/msync/屏障或无报错不构成证明。
-- 动态切换须证明 pending/current 与旧缓冲可复用；park读写不证明vblank/无撕裂。退出/信号/异常须确认 DMA HALTED 后逐个释放；无法确认则保留所有权。禁止全局 xlnk reset/回收他人 CMA。
-- 先审分配器/libcma构造、析构、失败回滚与同步语义；dlopen/main之前也可能访问设备，void API不证明成功。纯离线不用 Overlay/MMIO/PYNQ导入/库加载代替文件解析，download=False不保证无副作用。
-- 明确 Linux 时钟/复位/HP/MMIO/DMA 独占或协作；不运行裸机PS初始化、不猜I²C、不凭设备节点/空闲地址推断可用。服务故障不自动授权修服务/换BOOT/启动卡。
-- 核准实际镜像/内核/PYNQ/编译器、ARMv7 hard-float、加载器/glibc；主机编译或PYNQ-Z1/Z2示例不证明同板兼容。HWH请求、实际FCLK、运行读回、物理时钟分别记录。
-- HDMI 核准完整 pixel clock/totals/porches/极性/VTC/dynclk/MM2S/video-out/rgb2dvi关系；最终采用1280×720，不再要求1280×800输出。沿用已存真实EDID及已有720p证据，不重复索要控制板型号；新的时钟方案先实测有效整数时钟波形，失败后才评估小数分频。
-- 最小PL彩条仅为显式可逆链路诊断，仍需同代时序/DRC；是否继续及剩余额度按当前状态，不重启已停止分支。EDID/彩条不替代Linux资源/缓存/退出验收。
+- 2026-10-29 PYNQ迁移准备：用户要求冻结version14板端、最新网页资源和唯一JSON/C核心。可恢复快照与迁移清单位于`output/build/game_app/pynq_migration_baseline_20261029_1/`；本轮只归档和离线恢复验证，不实施移植、不更换现用BOOT。后续目标为板上PYNQ/Python/Jupyter编排、复用现有C核心、PL Overlay及电脑浏览器呈现；电脑侧不再增加桌面Python/Godot工程，必要共享Python后端迁到板上。历史镜像PYNQ2.6.2/Python3.6与当前网页依赖存在兼容差异，Python3.6适配仍待验证，不能把冻结包当作已完成PYNQ版。源文件与已编译固件身份分别记录；固件生成配置不等同于后来350ms准入的当前JSON。硬件连接、SD写入、服务修改及Vivado权限不因归档扩大。
 
-## PL 验收与验证边界
-- 声明输入模型下验收；现有3.571ns、输入0.268/1.518ns、15%UI余量，除明确用户决定/适用证据审查不变。全PVT/外部眼图UNKNOWN不作前置条件，也不宣称物理生产保证。
-- 同代生产顶层 WNS/TNS/WHS/THS 均非负，时钟/I/O有效，无未解释无约束路径；Critical CDC解决，其余已审。不得放宽模型、移除时钟、无依据false path/multicycle/豁免换通过。
-- CDC用可识别同步器/握手/异步FIFO及匹配约束；修复须查延迟、复位/重锁、最早SoT/首payload。激励实际周期/精度、边沿、全覆盖和原语告警纳入验收；不放宽checker或仅凭匹配前缀通过。
-- 改打包IP保留checksum/catalog/target-refresh，证明综合使用规范HDL；BIT/HWH/XSA同源，核对哈希、器件、地址/span、端口/寄存器、时钟，保留旧制品适用范围。OOC/旧报告不能转签新顶层。
-- production/debug显式分开；默认主要资源<70%、placed slices<75%，按LUT/FF/slice/BRAM/DSP/clock/I/O分层核准；改预算须审查。
-- PL保留接收/ISP/行缓存/HDMI，PS负责设备/所有权/检测/映射/场景/光路/合成。AXI流保留握手、SOF/EOL、适用TKEEP、背压及像素/元数据对齐。
-- 无性能证据不加feature tap/加速器/新DMA/跨时钟架构；需要时单独可回退审查，算容量、最坏带宽、缓存/复制流量，保持C语义及声明误差。显示Hz/识别Hz/接收间隔/鼠标与端到端延迟分别测；嵌套累计计时不可直接相加。
-- 选最便宜有效验证：静态 → 定向编译/仿真 → 必要OOC → 获授权完整构建 → 获授权板测。文档任务只查内容/链接/diff，不运行算法测试或FPGA构建；无新增风险不复跑。
-- 首次运行或准备流程变更时，在授权范围内用实际工具核准完整准备段至昂贵运行前一刻，覆盖用户参数范围/只读属性、极性、缓存/目标刷新、实际源与增量设置；后续只复验受影响段。mock、原语模型范围、哈希一致或提前返回的prepare-only不能替代实际入口验证；未覆盖项明确标出，不宣称准备通过。
-- 复位/CDC/时钟/RAM拓扑改变时，优先在获授权的最小综合中审查实际连接、初始化与约束，再升级布局布线；已有合格同源网表则直接复用。报告解析先用已有真实报告检查表头、数字、负值及缺失/未知格式，失败必须拒绝；仅修报告不得重跑综合/实现。
-- 预算探针先确认原语/路由/时钟合法依据、具体假设和判定条件；范围授权内可一次固定最小探针取缺失证据，不要求事先证明成功，不自动扩为扫描/完整构建。候选通过仍须完成后续功能/启动/OOC/顶层门。
+- 2026-10-28 网页/Godot同步：网页`20261028-web-sync350-3`与Godot共用`20261028-binary-v3-350-6`和唯一JSON/C核心，场景准入350ms；浏览器/引擎断档提示也读取配置。350ms准入、351ms拒绝并保留旧完整场景的边界测试通过；独立校时质量250ms、v3协议和version14 BOOT不变。重启网页后台并刷新页面，避免旧进程保留启动时配置。
 
-## 授权与停止
-- 完整Vivado构建须本轮明确请求；昂贵运行先有假设、目的与额度。不测试/失败停止等用户限定优先。
-- 授权包在开始时一次对齐修复、定向验证、综合、实现、制品生成及板测的条件与额度。入口必须与授权一致：“仅实现”过门后也不得自动生成BIT/HWH/XSA；实现和导出须能分别停止，不因已有旧额度扩大本轮范围。
-- 板端操作须当前任务明确授权，含UART/JTAG/SSH只读连接、采样、设备/寄存器、下载/复位/烧录/SD写入/服务启动配置/实际运行；开着工具、已接线、历史授权不算。本轮范围内连续执行，不逐项再问；只授权下载不追加验证。
-- 下一任务需板卡时在上轮收口提前说明实际需要的接线与板卡状态；提醒/接线不等于授权。串口沉默不推断损坏或擅自复位。
-- 环境/权限/shell/网络/工具启动同法最多重试一次；两次失败停该路径，给精确错误与最小解除条件，不换一串等价入口/复制工程/改系统绕过。
-- 设计每方案最多两轮验证，同因两败停；明确允许继续修订时累计三次修订仍失败暂停。历史计数不因改名/换会话清零，更严任务额度优先。一般实现/修复授权包含直接相关声明、类型、端口及报告格式错误的本地修正与便宜复验，不为每条编译错误另请授权；明确不测试、失败即停或限定验证次数时服从该限定，环境失败仍按同法两次上限。设计、夹具/编译/报告错误分别记，额度领取与实际阶段分别记；已消耗额度不回收，不偷增昂贵运行。
-- 区分本次/历史、offline/mock、仿真/OOC/顶层/实板；保留失败样本，不改期望伪造通过。过门后连续完成授权包，触及停止条件收口。
+- 2026-10-28 最新电脑准入决定：用户明确要求仅将电脑端`board_game.scene_max_age_ms`从250改为350ms，不做帧数对比。覆盖下文PC250ms不可放宽的历史要求；Python与同一C游戏核心均从唯一JSON取350ms，Godot/网页共用。校时质量上限250ms、板端B支持间隔350ms和version14 BOOT不变；需重启电脑后台加载配置。
 
-## 最小工作流与读取
-- 按一个可验收成果连续完成实现、必要接口、定向验证与最小状态记录；不按命令/文件拆任务，不另开监督聊天重复审查。独立新问题只留一行证据与建议，不自动开支线。
-- 每轮先确定一个会改变交付决策的未决问题及通过/停止条件；授权内过门即继续。新增检查须针对具体风险，不能以检查数量或重复哈希代替成果。已有有效证据足够时进入下一门槛；当前路线缺少新假设/来源时明确收口，不以反复补证或泛化方案占用后续轮次。
-- 新任务检查 git status --short、git diff --stat，默认在工具内汇总数量及任务相关路径；不把整库既有diff送入上下文。修改前/并发迹象时复查目标文件。用户未提交/未知归属全部保留，不自行commit/push/reset/覆盖。
-- 已注入AGENTS不再整篇读。PROJECT_STATE先读Current Goal短摘要；只在选择下一门槛时读Delivery Gates and Next Task，历史/契约/Current Problem按具体问题定位，不默认顺读。
-- 用rg和精确路径/章节；读取默认每文件≤120行，工具输出默认≤2000 tokens，需要时有目的扩展。先在工具内统计筛选，只返回必要字段/错误段；截断后缩小查询，不抬限重读全文。不把完整聊天/命令日志直接回传。
-- 同一证据只读一次；源码/输入模型/配置/假设变更时复核受影响部分。压缩或恢复上下文后先用当前短状态和所引证据，不重放完整聊天/历史报告。长运行仅在进度改变/完成/失败时取小段状态，不重复尾读同一日志。技术联网仅解决具体未知，复用已核准版本/commit，不循环检索。
-- 常规读取、编译修正及报告格式问题用定向、确定性检查，不反复展开全工程方案推演；深入分析集中在尚未解决的采样、时钟、CDC、DMA所有权等具体问题。沿用用户选择的模型/推理设置，不擅自切换或为节省token省略必要验证。
-- 默认不扫 .Xil、*.cache/gen/runs/sim/hw/ip_user_files、数据集、二进制或全部日志；确有必要才读指定报告/网表。生成文件不等于可删；删除前确认归属/依赖/本轮范围。
-- 原生Windows PowerShell/Vivado/Vitis/XSCT流程优先，不固定假定WSL；只使用适用现有工具，不升级镜像/工具链绕过问题。
-- 完成检查仅限本轮相关diff/空白和新增文件；已有大量未提交文件时用本轮前后差异审阅，不重复打印相对HEAD的历史全部改动。最终简述成果、实际验证、剩余阻塞；不固定复述所有契约、门槛或生成长篇下一任务提示词。
+- 2026-10-28 v3二进制正式交付：用户授权替换两端协议并生成新BOOT。当前BOOT=`color_test/build/beam_standalone/restored_binary_v3_1/output/BOOT.BIN`，version14，SHA256`4abcf689a6fc933c946851915aceaaca7850e7e457a930c66f098f5229b5fe88`；PC=`20261028-binary-v3-5`，网页=`20261028-web-board-v14-2`，共享单一串口运行层。全部消息采用00FF/COBS/长度/CRC32二进制v3，LEVEL43字节、三/五物块姿态106/130字节，姿态绑定PC关卡/代次/nonce并保持原相机时序。旧ASCII仅供内部状态表示/离线回放，正式串口不降级兼容v2；必须同时更新电脑与BOOT。B350、PortalB对齐、整帧显示、250ms计分准入与DMA不变。35项主机、8项网页、Godot与ARM/BOOT校验通过；940份原始姿态量化重放无判定差异。协议细节见`pc_vision/SERIAL_PROTOCOL.md`。本轮未连接真实UART/板卡、写SD或运行Vivado；用户负责SD替换与上板，实际帧率仍待实测。
 
-## 文档：仅保留执行所需信息
-- 默认读者是Codex；用短Markdown或现有结构化记录即可。不为人类排版、润色、双语翻译、重复解释或做PDF/Word/图表。不要用晦涩缩写/压成一行牺牲可检索性；不另造“机器版+人类版”。
-- PROJECT_STATE.md是唯一当前状态入口。任务实质改变状态时就地替换对应摘要：status、evidence、blocker、attempts、next、authorization；Current Goal目标≤30行，Delivery Gates当前摘要目标≤40行（既有契约/门槛表按需查）。无状态变化不更新。
-- 一份事实一个详细来源。优先复用现有review.json/package_ledger.json/工具报告/原始日志；状态只写结论、证据路径、未通过门槛、失败计数及下一步，不抄报告。无结构化记录时才在既有reports/output位置留最小记录，不强制新schema/生成器。
-- 默认不新建REVIEW.md、总结/审计/交接文档，不在采样方案追加每轮纪要；不自动同步README/CHANGELOG/ARCHITECTURE。只有实际使用入口/接口契约改变且缺少权威记录，或用户明确要求时，更新唯一对应说明。项目skill旧有多份报告要求在本仓库按此最小记录规则执行，保留必要原始证据。
-- 历史文档与唯一证据保留，默认不读、不润色、不批量转换/删除。AGENTS只放长期规则，不追加进度。不得新增竞争STATUS/CURRENT/PROGRESS文件。
+- 2026-10-28 PC Portal B对齐：电脑此前沿用旧配对出口，现`board_game.portal_b_exit_side=1`经同一GameSession接入已有策略求解，与板端`real_scene.beam.portal_b_exit_side=1`同侧长边/+法向垂直出射；PC build=`20261028-portal-b-aligned-4`，继续保留整帧显示，原version13 BOOT不变。关卡2双入口侧×四个B旋转与19项主机/10项配置检查通过。本轮刷新方案仅分析：匹配原始日志POSE2零解码失败，关卡2中位采集间隔266ms、采集等待/拷贝130ms、检测85ms，有效姿态保守龄373ms；597板端有效帧仅5份潜在满足PC时序准入。下一步优先缩短SYNC服务等待，再设计紧凑帧与优化采集/检测；不把CONTROL_RX_REJECTED计数当POSE坏帧，不放宽250ms，不由此授权硬件实测。
 
-## 定位入口（按需）
-- 核心：color_test/software/vision_ps_baremetal/src/vision_ps.*、game_scene_adapter.*、game_session.*、ray_game.*。
-- 调度/输入/显示：同目录game_app/loop/pump/input/evdev/linux_io/render/linux_display.*；目录名baremetal不意味着另复制Linux实现。
-- 配置：唯一手工pc_vision/game_config.json；PC参考game_app.py；派生配置用现有生成器。
-- 采集/制品/打包：pynq_vision/现有入口；PL：color_test/repo/ip/规范HDL、rtl/、XDC、sim/、tools/。
-- DMA/Overlay：skill/pynq-dma-contract/SKILL.md；性能日志：skill/stream-perf-analysis/SKILL.md；PL验收：skill/fpga-verification-gates/SKILL.md。只在任务相关时读，不默认多代理。
-- 外部资料优先AMD/PYNQ/Linux/ALINX一手来源，核准实际版本、器件、逐文件许可；不自动安装执行外部脚本，不复制XDC/驱动/BSP/BOOT。已核准参考只在确需时打开：
-  - ALINX AX7Z020B_2023.1，commit fafe3878cdab30a2b2fe00a388e1e838b79c51a4；course_s2_vitis/20_sd_hdmi_out/Vitis/auto_create_vitis/src/bmp_read/，仅SD→DDR→VDMA流程。无统一顶层许可，display_ctrl含Digilent版权；固定54字节BMP头/裸机缓存/1080p默认不能套Linux。
-  - andrade824/2D-Graphics-Accelerator-IP，commit 6514618b8ea3020978eba448e7f6f8a7658e0216；仅图层/缓冲概念。640×480/16bit、自定义DMA/IP/Yocto不适用；meta-devbox/COPYING.MIT不证明全仓许可。
-  - GrimDocDimes/2d-gpu-pynq，commit 28a2a60fcd57c9df53a443d39c92e5bc333949ad，根MIT；仅PS/PL分工及简单线段思想。PYNQ-Z2/≥3.0/720p RGB565不能套本板PYNQ2.6/BGR888，Python flip不证明vblank/缓存安全。
+- 2026-10-28 电脑端持续显示最新决定：用户要求开始计时后，手部遮挡或等待识别期间不清空虚拟物块，等新完整场景再原子替换。PC build=`20261028-continuous-scene-3`，运行中的当前关保留上一份完整模型/光路（覆盖旧电脑250ms缺失/6s清空约束），模型正常亮度，STALE禁命中特效、旧时序不刷新且不送C计分；切关/菜单/结束清理。新数据立即唤醒、周期最长10ms。仅改PC，继续使用version13整合BOOT；不由此推断板端识别或帧率已提高。
+
+- 2026-10-28 最新整合交付：用户确认此前COM9零接收时板卡尚未启动，最新指示仅生成BOOT并更新上位机，不再串口实测。当前BOOT=`color_test/build/beam_standalone/restored_integrated_1/output/BOOT.BIN`，version13，包含version12 Portal修正/B350/恒亮保持/控制协议2；本轮板端只更新版本及整合标识。PC build=`20261028-serial-priority-2`：关卡/开始/重置优先于周期校时，控制2秒/3次超时从完整实际写入完成起计算，保留匹配READY2与光源回显后解锁。`pc_vision/start_game.ps1`导入美术并以COM9/115200启动、记录实际TX/RX。21项主机测试、Godot检查、ARM/BOOT分区校验通过；通电后的真实握手/游戏仍待用户上板。旧COM9实测日志仅记录驱动发送、零接收，不代表已启动板卡的收发结果。
+
+- 2026-10-28 Portal低饱和/偏色后续：用户确认问题发生在板卡HDMI。握手version11与`restored_portal_local_1`的vision_ps/稳定器/求解器编译对象一致，game_beam提交/保持/绘制、capture/display函数机器码也一致；没有参考错检测基线。新日志的24个采样中A仅接受1次、22次几何拒绝；另一段9个采样A全部未接受，主要仅B。间隔218..260ms不足以归因B350超限。新05-49/05-56截图支持蓝色低S主体碎裂与偏色白环分裂。restored蓝色候选S下限40→25；Portal局部白S上限65优先、失败后原严格40完整标记验证回退；全局白/WALL、几何/实心环/配对/歧义门槛、B350与保持/DMA不变。六张屏幕参考分别检测5/5/3/2/4/2个现场物体且均含A/B与2段传送光路；不是原始相机或实板验收。当前BOOT=`color_test/build/beam_standalone/restored_portal_saturation_1/output/BOOT.BIN`，version12，兼容既有LEVEL2握手；host/ARM/BOOT校验通过，实际稳定性待用户上板。
+
+- 2026-10-28 Portal A/B 稳定性修正（历史version10）：用户两张新截图的离线回放此前因低亮度、局部白环/白点低V以及Portal主体倾斜导致Portal A标记拒绝；Portal B多已通过。restored Portal局部ROI现在使用相对主体的低饱和白标记条件，不改变全局白色/WALL阈值；Portal姿态改由solid→ring端点联合中点与轴确定，避免主体PCA偏移使光线只有命中中点才传送。保留环/实心、相对位置、面积比、对齐和歧义门槛。离线四张截图实际分别识别5/5/3/2个现场物体，新两张均得到A/B与2段光路（含一次传送）；1824个Portal B长边入口/两侧/切向组合测试通过。此前BOOT为`color_test/build/beam_standalone/restored_portal_local_1/output/BOOT.BIN`，启动version10，实际板端识别/交互待用户上板。
+
+- 2026-10-28 最新显示决定：板端实景HDMI在待确认/短暂漏检时保留最后一次成功确认的同帧相机原图、模型和完整光路，光线保持原亮度，覆盖下文“STALE变暗/缺失时按旧画面250ms年龄清空”的旧显示规则。继续标记STALE与原始帧龄，valid=0/success=0/POSE2不附旧姿态；无效输入保持仍从旧captured_ms计算6s绝对上限。350ms B及250ms实测持续移走确认不变，后者仅控制新实测子集提交，不再缩短旧画面保持期。当前BOOT=`color_test/build/beam_standalone/restored_hold_bright_1/output/BOOT.BIN`，启动version9与BEAM_HOLD brightness=constant；host整图像素一致性/1300ms间隔/更新/6s到期/复位及ARM/BOOT校验通过，实际防闪效果待用户上板。PC游戏250ms准入及DMA安全规则不变。
+- 2026-10-28 最新用户决定：B防抖支持间隔由250ms改为用户明确指定的350ms（覆盖下文“不放宽250ms”的历史约束）。唯一JSON新增`real_scene.beam.stability_support_gap_ms=350`，GameBeam配置版本3传入同一timed算法；原timed API仍默认250。350ms包含边界、351ms重新确认，死区/迟滞/确认次数与时间、原始戳、缺失处理和DMA不变。POSE2缺失掩码取消实体SOURCE位，保留全部真实缺失位，协议仍为2。当前BOOT=`color_test/build/beam_standalone/restored_gap350_1/output/BOOT.BIN`，启动version8/support_gap_ms=350；host边界/五类场景/协议及ARM/BOOT检查通过，用户实板光线/交互仍待确认。完整电脑游戏`scene_max_age_ms=250`与显示明确缺失250ms属于独立规则，本次没有改成350ms。
+- 2026-10-28 无光线后续：用户09c3b0ef日志显示五类候选已可齐全，但连续采集间隔285–364ms、中位300ms，全部超过B的250ms支持间隔，导致持续PENDING/无有效光段。restored新增精确24位整数倒数HSV与按行Portal ROI遍历，消除逐像素软件除法；16777216种RGB与原HSV逐项一致。未改阈值、B250ms、原始时间戳、光路或DMA退休条件。当前BOOT更新为`color_test/build/beam_standalone/restored_bc_fast_1/output/BOOT.BIN`，启动version7，POSE2仍为协议2；host/ARM/BOOT校验通过，实际加速幅度/稳定确认/交互待用户上板，不能声称已经降至250ms以内。下方bc_2/version6为历史基线。
+- 2026-10-28 B+C更新：用户将相机从50cm降至38.5cm；固定镜头/平面下约1.30倍投影长度、1.69倍面积，仅作像素尺度验证，不是毫米标定。restored profile现在用4×4平均BGR和共享HSV，Target复用实际绿色掩码；低饱和主体仍需全部标记/形状验证。Portal全分辨率ROI改为有界512×512工作区，解决倾斜时误触320×180采样容量的问题；WALL白条上限256采样单元，保留配对与暗走廊。显示两个新START退休等待与下一帧安全采集等待重叠；pending不得复用缓冲；诊断有界队列与POSE2保持整报文边界。B250ms、原始时间戳、HALTED退出及旧profile规则不放宽。当前BOOT为`color_test/build/beam_standalone/restored_bc_2/output/BOOT.BIN`，启动version6，步骤/校验见`STANDALONE_BEAM.md`。只有host/ARM与屏幕参考检查通过，实际识别/帧间隔/交互待用户上板。
+- 2026-10-27 最新恢复决定：以 `b206663` 的第一版完整实景叠加/彩色旧物块检测为参考恢复；恢复前全部非忽略源码与未跟踪文件已存 Git 检查点 `636f4e5a659b6e3e9266e54385f753759bf0ce75`（不含构建输出）。继续 Standalone/core0、虚拟光源 `(32,500)` 向右、五类物体、无 KEY/菜单/关卡。Mirror 为黄色主体加两端黑点，Portal 为蓝/橙主体加白色实心点与圆环，取消 Mirror/Portal 中央白条和 AprilTag 运行依赖；WALL 保留两端白条。当前使用同一 `vision_ps` 的 `VISION_PROFILE_RESTORED`，旧 AprilTag 源与测量配置保留为历史，不自动启用。
+- 本次保留 timed B 防抖及 250ms 支持间隔；新观测 PENDING/缺失时，不把旧姿态冒充有效输入。显示可短时保留上一份相机原图及同帧模型/完整光段，保留原始序号/时间并明确 STALE、光线变暗；PENDING 最多6s、明确物体缺失最多250ms。物体持续移走250ms后按新的实测子集提交。沿用当前安全三缓冲/flush/退休栅栏，禁止清屏半成品提交。Portal B 单向出口由唯一 JSON 的 `portal_b_exit_side=1` 定义为 solid→ring 轴的正法向 `(-axis.y,axis.x)`，出射点在同侧长边、方向垂直向外，旋转 B 则出口随之转动；其他调用路径保留原 Portal 配对规则。
+- 本次恢复源码/host/ARM 编译及 BOOT 打包沿用已授权范围；用户负责 SD 复制与实景上板。未恢复旧裸板环形指针猜测所有权的复制方式，未授权硬件连接、复位、下载、SD写入或 Vivado。下列三标签/白线定位和 PL 加速方向是此前路线记录，本次默认已被上述旧物块恢复决定覆盖。
+- 2026-10-27 用户最新决定：板端实景绘制改为 Cortex-A9/core0 Standalone 裸板，不再以 PYNQ/Linux 为运行或部署依赖。当前交付固定光源 `(32,500)` 向右、五类物体动态交互的最小测试版，无 KEY/菜单/关卡。入口与用户编译步骤见 `color_test/software/vision_ps_baremetal/STANDALONE_BEAM.md`；保留旧 PYNQ 实现作历史参考，后文相关默认路径不覆盖此决定。
+- 2026-10-27 最新分工：用户已授权 Codex 编码、主机检查、ARM 编译并生成本测试版 BOOT；由用户复制到 SD 卡和实景上板。这不授权 Vivado 完整构建、硬件连接/下载/复位或 SD 写入。裸板会话没有 Linux boot_id/sudo/systemd；记录输入 XSA/BIT/ELF 身份、启动日志和实际 DMA 停机状态，不能套用 Linux 会话清理命令。
+- 2026-10-27 用户允许取消非必需的250ms：当前无关卡裸板光束测试版取消按帧龄拒绝/停机（唯一JSON的`real_scene.beam.max_age_ms=0`），相机原图、模型和光路仍使用同一CPU帧，保留原始时间/序号、实测帧龄显示及所有DMA所有权/超时/异常停机。此例外不修改完整游戏`board_game.scene_max_age_ms=250`，也不代表检测延迟或实时性已改善。
+- 2026-10-27 最新性能方向：用户要求加快每帧识别并通过PL加速，明确不取消防抖；继续保留B，不切A、不放宽B的250ms支持间隔、不用旧姿态维持光线伪造通过。build5用户日志显示86帧中55帧PENDING、5帧RESTRICTED，暂无故障停机；先使用build7的原AprilTag四阶段耗时定位PL迁移边界，再完成相应硬件/PS接入。build7仅分项诊断，不是PL加速制品，未改BIT。
+- 2026-10-27 Mirror/WALL修正：裸板光束编译以`GAME_BEAM_STANDALONE`使用完整1280×720检测区，取消旧六类相机UI的`center_y<590`和x范围过滤；仍要求检测框与图像相交，颜色/形状/标记/几何及B防抖门槛不变。旧非Standalone路径保留原场地限制。该修正覆盖新的固定光线`y=500`以及更下方的物块位置，不是放宽到任意无效检测。
+- 唯一工作区是当前仓库。产品方案以 [`pc_vision/FINAL_PLAN.md`](pc_vision/FINAL_PLAN.md) 为准；状态从 `PROJECT_STATE.md` 的 `Current Goal`、`Delivery Gates and Next Task` 读取。只读当前任务相关段落，冲突时以用户最新决定为准。
+- 当前交付为摄像头驱动的两种显示：实景画面叠加光路，以及电脑端完整虚拟游戏。板端复用 Linux/PYNQ 采集、C/C++ 定位、场景适配和现有 HDMI；电脑端复用 NativeGame/C 会话与 `pc_vision/godot/` 呈现层。
+- 复用同一检测入口、`game_session`、`ray_game` 和唯一游戏配置；不复制工程，不另建一套检测器、光路规则或游戏状态机。实景与 Godot 是同一有效场景的两种呈现，不要求在 PYNQ 上重新实现电脑游戏美术。
+- 优先完成精确姿态/有效边界、固定逻辑光源和实时闭环。显示基线、PL 优化、历史竞赛材料只在直接阻塞交付时处理，不为整理材料扩大范围。
+
+## 运行约定
+
+- 每关使用固定逻辑光源，发射点和初始方向来自关卡配置；取消实体 SOURCE 检测、定位与方向锁定要求。只固定发射条件，后续传播仍与实物动态交互。修改实体必检清单及开始/重置契约，不能只删实物或只画图标；求解器内部可保留 SOURCE 表达，但不得伪装成摄像头观测。
+- 摄像头保持现有两 lane、1280×720、RAW10/BGGR。两个 Portal 已由用户改成三标签：A 为 10/11/12，B 为 20/21/22，字典 `tag36h11 / DICT_APRILTAG_36h11`；主体 8×8 mm，四边各 2 mm 白边，完整贴纸 12×12 mm。Portal 外形 80×25 mm，以实际粘贴中心和朝向建立刚性模板；其余标记默认保留。
+- 定位重点是中心、方向与有效边界。联合可见标签角点拟合整体 Portal，不只平均标签中心；区分标签尺寸、物体外形与有效入口。Mirror 为有限反射面，Portal 保留长侧入口和配对传送规则，Target 沿用已有效的圆形边界；颜色外框不自动成为碰撞边界。
+- 手移、原地旋转及小角度微调必须反映到同一份有效模型和光路；不用鼠标拖动模型，不用场景注入或 START 绕过实体定位。稳定算法保留连续滤波 A 与死区/迟滞确认 B 两种选项，初版建议 B；在同一段观测比较后决定，不能套用旧 Portal“只有位移才能改方向”规则。
+- 相机像素、棋盘毫米和显示像素分别标识，经真实标定转换；中心、方向参考点、有效边界、光路和粒子锚点使用一致变换。模型尺寸由实测模板决定，不随检测 bbox 缩放；历史 `[164,56]` 等虚拟单位不能直接当成毫米。
+- 一个游戏会话只有一个权威 `game_session/ray_game` 和一处稳定姿态提交。板端独立游戏或电脑 NativeGame 按本次部署选择；同局双屏共用已提交场景、完整光段、计时和结算，不能分别计算通关。Godot 只呈现权威结果和发送操作请求。
+- 实时帧保持 generation、sequence、captured time、level 等原始标记与时钟语义。现有 `scene-v1.capture_ms` 是处理开始时间，不声称是曝光时刻；跨设备明确时钟映射。模型和光路按同一快照替换，过期、缺失、旧关卡或受限遮挡观测不能通关。
+- 显示保留与有效性分开：复用 PC 短时保留、STALE 变暗和超时清空，不刷新旧姿态的采集时间；6 s 显示保留不是游戏有效期，C 的 250 ms 新鲜度门限不能为消除闪烁而放宽。定位低频不能靠高刷新动画或无限保持掩盖。
+- 板端继续使用一个进程/会话所有者管理 capture 与 display；电脑呈现进程不另开板端采集/设备所有者。CPU 不读写设备仍占用的缓冲；退出、超时和异常先确认相关 DMA HALTED，再释放各自缓冲。保留 cache、stride、span 和同步语义，不猜地址或设备所有权。
+- 摄像头、电脑画布、实景叠加与最终 HDMI 统一 1280×720、16:9；1280×800 屏幕保持比例显示，原生桌面全屏可上下各留 40 像素。迁移旧 800 行画布、菜单和鼠标坐标时改同一份布局，不拉伸相机图或变更采集模式。
+- Godot 复用现有中文菜单、模型、背景与结算美术，添加沿光段运动的粒子、反射火花和 Portal 进出效果。粒子只读有效光段/命中事件，不参与求交、通关或星级，不能跨越终止点或补画 Portal 间的实线。
+- 关卡与计时沿用当前契约：准备不计时；玩家明确开始后每关 180 秒；命中 TARGET 且用时 `<60/<120/<180` 秒为 3/2/1 星，超时为 0 星；可跳关，无持久化和声音。不得截断求解结果制造通关。
+
+## 当前工作与依赖
+
+- 离线先接入已贴的六个 Portal 标签、实测有效边界和固定逻辑光源契约；复用照片/录像比较 A/B 防抖，特别检查原地旋转、边界擦碰及遮挡恢复。
+- 沿既有 `capture_worker` → `game_capture_owner_dispatch`/`game_pump` 路径处理 `PROJECT_STATE.md` 当前连续采集阻塞；不重新执行已停止且没有新信息的 PARK/首帧诊断。离线定位与该阻塞可按依赖穿插推进。
+- 将已有 NativeGame 权威状态接入 Godot，迁移剩余 800 行接口到 720p，验证实景/虚拟画面几何一致以及菜单 → 开始 → 交互 → 结算 → 下一关和鼠标输入。
+- 选择最便宜的 host/ARM 定向检查后，才安排有明确目的且获授权的板端验证；静态照片、美术预览和编译通过不能代替实时闭环。BOOT、内核、rootfs、SD 和 PL 只在当前任务明确需要且获授权时修改。
+
+## 工作与验证规则
+
+- 默认由单智能体完成任务。使用 GPT-6.1 Sol Ultra（6.1 ultra）时，本工程禁止创建、启动或委派任何子智能体；必须由主智能体独立完成。其他模型也只有在用户明确允许时，才可创建、启动或委派子智能体；任务复杂、可并行或预期提速不能代替用户授权，且不得超出用户指定的授权范围。
+- 先读 `PROJECT_STATE.md` 当前摘要和目标文件，再用 `rg` 做定向检查。保留用户已有修改；不 reset、覆盖或删除未知归属文件。
+- 删除或替换仍有价值的旧版 PYNQ 实现/说明前，先确认引用关系并保存可恢复的本地 Git 提交或归档分支，记录提交号；归档必须包含将删除的未提交/未跟踪文件，不能只指向旧 HEAD。本次旧版说明归档为 `codex/archive-pynq-guidance-20261026`（`5da71ab927667959c90ebd93e2c0be96c512697b`）；它不代表已备份所有未提交运行代码。PYNQ 采集、DMA 与硬件安全约定仍服务于最终方案，不因电脑呈现而整目录删除。
+- 选择能回答当前问题的最便宜验证：静态/语法 → host 回放或单元检查 → ARM 编译/链接 → 必要的板端运行。没有新增风险就不重复旧测试；不默认运行 Vivado、OOC、完整实现或全量日志扫描。
+- 本地源码、文档、host/ARM 定向检查属于当前任务范围。UART/JTAG/SSH 连接、下载/复位/烧录、SD 写入、服务改动、真实板端运行、Vivado 完整构建和 BIT/HWH/XSA 导出需要用户在当前任务明确授权；获得授权后一次性完成直接相关步骤，不为每个命令重复询问，也不自动扩大范围。
+- 同一问题连续两次没有新信息就停止该路径，保留失败原因并给出最小下一步；不靠换入口、改阈值或生成更多报告来伪造通过。
+- 只在状态、阻塞或下一步实际变化时更新 `PROJECT_STATE.md`。除非用户要求或调试确实需要，不新建 REVIEW、审计、总结、交接或重复 JSON 报告；最终用简短文字说明改动、验证、阻塞和下一步。
+- 离线、host、ARM、板端结果分开表述；模拟画面、旧制品和单模块通过不能写成实时摄像头或完整游戏通过。
+
+### Windows Vivado/JTAG 主机固定规则
+
+- Codex 沙箱下不要直接调用安装目录的 `vivado.bat`：其 `pushd "%~dp0"` 会因外部目录切换被拒绝。使用 `color_test/tools/vivado_nocd.bat`，不修改 Vivado 安装目录。
+- `hw_server.exe` 与 Vivado 的本机 TCP 连接使用同一个获准的提升权限上下文。普通权限出现 `WinError 10013` 时只提升当前硬件命令，不修改全局 ACL、注册表或防火墙。
+- 3121 只允许一个 `hw_server.exe`。启动前检查监听 PID 和完整进程路径；匹配的现有服务直接复用。只有用户授权停止确认路径为 `hw_server.exe` 的遗留实例后，才启动一个受控服务，禁止让 Vivado 自动再拉起第二实例。
+- JTAG 排障先做只读 target/device 枚举，再做最小 PL-only 下载并读回 DONE/EOS/CRC；不初始化 PS、不下载 ELF、不写 SD。完整流程和实测证据见 [`color_test/tools/README.md`](color_test/tools/README.md)。
+
+### JTAG/板端调试会话清理协议
+
+- 每次 JTAG、UART 或板端实测开始前，先读取本次 `/proc/sys/kernel/random/boot_id`，不得复用旧脚本中的 boot UUID；执行一次 `sudo -n true` 准入检查，失败时只刷新一次已授权 sudo 会话。
+- 先清点并停止上一轮留下的菜单/采集服务和进程：`live_display.el`、`capture_worker.py`、旧的 `ray-game-*` 单元，以及任何仍持有 `/dev/mem`、`/dev/xlnk` 或 CMA 映射的所有者。停止后确认目标 DMA 已 HALTED、RS=0、错误位为 0、摄像头 GPIO 回到安全值，再开始下一轮。
+- 每轮运行使用唯一的 claim/stem。运行返回、超时或准入失败后，先把 `/run/game_live_camera/capture` 中的 log/result/first-fault 文件取回主机归档；只有确认没有活动所有者，才删除同一轮残留的 claim/log/result，禁止用旧回执覆盖新证据。
+- 菜单恢复、实时采集和 JTAG 下载必须分成三个阶段。采集失败后先完成安全停机和证据抓取，再单独恢复菜单；菜单服务确认 inactive、所有者清空后才能再次启动实时采集或 JTAG。
+- 每轮准入只读取能回答当前问题的寄存器。发现 `/dev/mem`/PL 访问触发 Bus error 时立即停止扩展 MMIO 快照，保留板卡状态，改用 UART 的 boot/service/process 只读信息；不得把该异常当作摄像头帧故障，也不得在未确认所有权时复位或清错。
+- JTAG 临时加载前后保存 boot UUID、BIT/HWH/ELF 哈希、FPGA load 计数和 hw_server PID；下载失败或串口占用时先释放上轮会话，不重复启动第二个 hw_server，不重复使用未完成运行窗口。
+- 调试证据必须按轮次保存到 `output/build/game_app/`，主机归档完成后才允许清理板端临时文件。未触发场景的窗口只记为 NOT_RUN，不得作为摄像头失败或通过。
+
+## 技能使用
+
+- `skill/ray-game-integration/SKILL.md`：处理固定逻辑光源、Portal 多标签精确定位、有效边界、防抖、同局场景一致性或 Godot 正式接入时使用。
+- `skill/pynq-dma-contract/SKILL.md`：仅在 capture/display 缓冲、cache、stride、所有权或安全退出是当前问题时使用。
+- `skill/stream-perf-analysis/SKILL.md`：仅在实时帧率、处理延迟、新鲜度或遮挡保持期需要已有日志分析时使用。
+- `skill/fpga-verification-gates/SKILL.md`：仅在 PL/RTL、AXI、Bayer、时序/CDC 或制品同源性直接阻塞当前闭环时使用。
+- `skill/xilinx-project-flow/SKILL.md`：仅处理实际 Vivado/Vitis/XSCT、制品交接或板端工具链阶段；纯定位、配置与电脑美术任务不默认进入该技能。
+- 技能默认给出短结论和最小下一步，不自动生成独立报告，不要求填满模板，不替代 `PROJECT_STATE.md`。
+
+## 代码入口
+
+- 检测与场景：`color_test/software/vision_ps_baremetal/src/vision_ps.*`、`game_scene_adapter.*`、`game_session.*`、`ray_game.*`。
+- 稳定与标定：同目录 `vision_stabilizer.*`、`pc_vision/game_scene.py`；权威稳定输出只保留一处，平面/内参标定记录与游戏配置用途分开。
+- 调度、输入和显示：同目录 `game_app/loop/pump/input/evdev/linux_io/render/linux_display.*`；目录名 `baremetal` 不表示复制一套 Linux 实现。
+- 电脑上位机：`pc_vision/scene_protocol.py`、`native.py` 的 NativeGame 和 `godot/`；普通 GameView 为调试显示，Godot 美术预览尚须正式会话桥接。
+- 配置：游戏手工配置仅 `pc_vision/game_config.json`，派生配置使用已有生成器；标签打印记录不另作运行配置，校准文件保留其测量数据身份。
+- 采集、制品和打包：`pynq_vision/` 现有入口；PL 仅改动与实时采集或显示闭环直接相关的规范源。

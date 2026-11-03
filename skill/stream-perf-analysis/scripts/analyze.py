@@ -101,6 +101,9 @@ def boundary_reason(before, after, stages, marker):
                 or last["maximum"] != first["maximum"]):
             return "duration_changed_without_samples:" + stage
         count = last["n"] - first["n"]
+        if (last["maximum"] > first["maximum"]
+                and last["total"] - first["total"] < last["maximum"]):
+            return "new_maximum_exceeds_window_total:" + stage
         if last["total"] - first["total"] > count * last["maximum"]:
             return "window_total_exceeds_maximum:" + stage
     return None

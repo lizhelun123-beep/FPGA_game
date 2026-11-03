@@ -52,7 +52,8 @@ begin
       aDEnable=>den,aClkEnable=>cen,video_aclk=>vc,video_aresetn=>rstn,vEnable=>en,
       m_axis_video_tdata=>vd,m_axis_video_tvalid=>vv,m_axis_video_tready=>ready,
       m_axis_video_tlast=>vl,m_axis_video_tuser=>vu,
-      CrcErrorCount=>crc_count,FrameCount=>packet_count,FifoOverflow=>ovf);
+      CrcErrorCount=>crc_count,FrameCount=>packet_count,FifoOverflow=>ovf,
+      FrameStartEvent=>open,FrameEndEvent=>open);
 
   -- One scoreboard consumes only handshakes, checks all four 10-bit pixels,
   -- SOF/EOL, and every held response. Expected data comes from image geometry.

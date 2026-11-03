@@ -1,0 +1,4 @@
+interface:
+  display_name: "实物交互与权威场景集成"
+  short_description: "接入固定光源、有限几何、稳定提交与 Godot 或网页的权威结果呈现"
+  default_prompt: "使用 $ray-game-integration 完成本次实物交互改动，保持模型与光路原子提交，区分显示保持和计分有效性。"

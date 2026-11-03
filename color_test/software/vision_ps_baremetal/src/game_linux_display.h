@@ -88,10 +88,24 @@ typedef struct {
     size_t span;
     size_t frame_span;
     unsigned frame_count, current_slot, submitted, fresh_frame_events;
+    unsigned pending_slot, retire_phase, retire_events, retire_timeout_ms;
+    uint64_t retire_started_ms, retire_previous_ms;
+    int update_pending;
     uint32_t last_park;
     int armed, configured, owner_active, allocation_owned;
     uint32_t last_control, last_status;
 } GameLinuxDisplay;
+
+/* One Linux ownership lease shared by the display and capture roles. Each
+ * role still receives an independent xlnk allocation and resource context;
+ * closing the session is allowed only after both role owners have released
+ * their mappings and confirmed DMA stopped. The opaque handle is heap-backed
+ * so this ABI does not expose Linux fd/MMIO details to the game layer. */
+typedef struct { void *impl; } GameLinuxLiveSession;
+typedef enum {
+    GAME_LINUX_LIVE_DISPLAY = 1,
+    GAME_LINUX_LIVE_CAPTURE = 2
+} GameLinuxLiveRole;
 
 GameDisplayStatus game_display_mode_valid(const GameDisplayMode *mode);
 void game_display_control_720p_mode(GameDisplayMode *mode);
@@ -121,6 +135,18 @@ GameDisplayStatus game_display_status(GameLinuxDisplay *display);
  * Qualification/lease/allocation remain owned; uncertain halt never copies. */
 GameDisplayStatus game_display_update(GameLinuxDisplay *display,
     const VisionCanvas *rendered, unsigned timeout_ms);
+/* Three-store queue copies+flushes the complete CPU frame before returning.
+ * poll must keep servicing the SAME two fresh START retirement fence; BUSY
+ * forbids another queue or store reuse. The caller may do disjoint CPU/capture
+ * work between polls. Any error retains all stores until actual HALTED stop. */
+GameDisplayStatus game_display_submit(GameLinuxDisplay *display,
+    const VisionCanvas *rendered, unsigned timeout_ms);
+GameDisplayStatus game_display_poll(GameLinuxDisplay *display);
+/* Recover only the software retirement observer after a transient poll/read
+ * failure while MM2S is still physically RUNNING with no error bits.  Never
+ * halts, resets, reconfigures, releases or rewrites a frame store.  A pending
+ * store restarts the same two-fresh-START retirement proof before reuse. */
+GameDisplayStatus game_display_resume_scanout(GameLinuxDisplay *display);
 /* Bounded observation, no game ticks/input/render. Caller prints READY only
  * after successful start. 1..30000 ms; always calls stop, including errors. */
 GameDisplayStatus game_display_observe(GameLinuxDisplay *display, unsigned duration_ms,
@@ -146,5 +172,11 @@ int game_display_owner_can_exit(const GameLinuxDisplay *display);
  * Any uncertain allocation/free retains the lease; no global reset/force flag. */
 GameDisplayStatus game_display_linux_preflight(void);
 void game_display_linux_platform(GameDisplayPlatform *platform);
+
+GameDisplayStatus game_linux_live_session_open(GameLinuxLiveSession *session);
+GameDisplayStatus game_linux_live_session_platform(GameLinuxLiveSession *session,
+    GameLinuxLiveRole role, GameDisplayPlatform *platform);
+GameDisplayStatus game_linux_live_session_close(GameLinuxLiveSession *session);
+int game_linux_live_session_can_exit(const GameLinuxLiveSession *session);
 
 #endif

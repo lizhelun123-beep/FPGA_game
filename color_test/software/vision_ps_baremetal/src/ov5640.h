@@ -18,4 +18,6 @@ struct reginfo
 int sensor_init(XIicPs *IicInstance);
 int sensor_configure(XIicPs *IicInstance);
 int sensor_start(XIicPs *IicInstance);
+/* Verified producer standby; receiver/DMA must remain alive for the tail. */
+int sensor_stop(XIicPs *IicInstance);
 #endif

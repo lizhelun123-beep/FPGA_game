@@ -484,7 +484,7 @@
         <xilinx:canUpgradeFrom>digilentinc.com:user:AXI_BayerToRGB:1.1</xilinx:canUpgradeFrom>
         <xilinx:canUpgradeFrom>digilentinc.com:user:AXI_BayerToRGB:1.2</xilinx:canUpgradeFrom>
       </xilinx:upgrades>
-      <xilinx:coreCreationDateTime>2026-10-23T15:02:11Z</xilinx:coreCreationDateTime>
+      <xilinx:coreCreationDateTime>2026-10-24T13:31:25Z</xilinx:coreCreationDateTime>
       <xilinx:tags>
         <xilinx:tag xilinx:name="digilentinc.com:user:AXI_BayerToRGB:1.0_ARCHIVE_LOCATION">f:/ax7350/mipi_test/ip_lib/ip/AXI_BayerToRGB</xilinx:tag>
         <xilinx:tag xilinx:name="digilentinc.com:user:AXI_BayerToRGB:1.1_ARCHIVE_LOCATION">f:/ax7350/mipi_test/ip_lib/ip/AXI_BayerToRGB</xilinx:tag>

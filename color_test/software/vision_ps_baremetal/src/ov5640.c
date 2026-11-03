@@ -468,6 +468,15 @@ int sensor_start(XIicPs *IicInstance)
 	return control == 0x02 ? XST_SUCCESS : XST_FAILURE;
 }
 
+int sensor_stop(XIicPs *IicInstance)
+{
+	u8 control = 0;
+	if (ov5640_write(IicInstance, 0x3008, 0x42) != XST_SUCCESS ||
+	    ov5640_read(IicInstance, 0x3008, &control) != XST_SUCCESS)
+		return XST_FAILURE;
+	return control == 0x42 ? XST_SUCCESS : XST_FAILURE;
+}
+
 /* Preserve the original configure-and-start API for other callers. */
 int sensor_init(XIicPs *IicInstance)
 {

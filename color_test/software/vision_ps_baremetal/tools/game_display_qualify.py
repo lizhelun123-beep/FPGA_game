@@ -55,10 +55,58 @@ def verify_reset_contract(package, modules):
                 parameters.get('C_EXT_RESET_HIGH') == '0', 'reset parameter contract')
 
 
+def inspect_boot5_menu(root, package):
+    """Production capture remains present but held reset;not a display-only BIT."""
+    require(package['part']=='xc7z020clg400-2' and package['software_scope']=='boot5_menu_only', 'wrong boot menu scope')
+    for name,digest in package['files'].items():
+        require(Path(name).name==name, 'unsafe boot menu member')
+        protected(root/name,64*1024*1024)
+        require(sha(root/name)==digest, 'boot menu source identity:'+name)
+    art=json.loads((root/'artifacts.json').read_text())
+    gate=json.loads((root/'gate.json').read_text())
+    boot=json.loads((root/'boot_manifest.json').read_text())
+    require(art['status']=='PASS_PAIRED_ENGINEERING_ARTIFACTS_NOT_BOARD_QUALIFIED' and
+            art['gate_sha256']==sha(root/'gate.json')==boot['gate_sha256'], 'unpaired boot display gate')
+    require(gate['status']=='PASS_DECLARED_MODEL_ROUTED_GATES_ALLOW_ONE_EXPORT', 'boot route gate closed')
+    for state in ('startup','runtime'):
+        require(all(gate['timing'][state][key]>=0 for key in ('WNS','TNS','WHS','THS','WPWS','TPWS')), 'boot timing negative')
+    require(art['sha256']['system_wrapper.bit']==boot['artifacts_sha256']['system_wrapper.bit'] and
+            sha(root/'display.hwh')==art['sha256']['system.hwh']==boot['artifacts_sha256']['system.hwh'], 'boot PL identity')
+    require(sha(Path('/boot/BOOT.BIN'))==boot['sha256'], 'SD BOOT differs')
+    hwh=ET.parse(str(root/'display.hwh')).getroot()
+    modules={m.get('INSTANCE'):m for m in hwh.findall('.//MODULE')}
+    require('axi_vdma_1' in modules and 'MIPI_CSI_2_RX_0' in modules, 'production capture disappeared')
+    verify_reset_contract(package,modules)
+    p={v.get('NAME'):v.get('VALUE') for v in modules['axi_vdma_0'].findall('.//PARAMETER')}
+    require(all(p.get(k)==v for k,v in {'C_NUM_FSTORES':'3','C_USE_MM2S_FSYNC':'0','C_INCLUDE_MM2S':'1','C_INCLUDE_S2MM':'0'}.items()), 'boot display VDMA contract')
+    ranges={v.get('INSTANCE'):(int(v.get('BASEVALUE'),16),int(v.get('HIGHVALUE'),16)) for v in hwh.findall('.//MEMRANGE')}
+    for name,base in [('axi_vdma_0',0x43010000),('axi_vdma_1',0x43000000),('axi_dynclk_0',0x43c00000),('vtg',0x43c10000)]:
+        require(ranges.get(name)==(base,base+65535), 'boot address/span:'+name)
+    return package
+
+
+def check_boot5_menu(root, package):
+    inspect_boot5_menu(root,package)
+    protected(root/'load_receipt.json',1024*1024)
+    live=json.loads((root/'load_receipt.json').read_text())
+    require(live['boot_id']==Path('/proc/sys/kernel/random/boot_id').read_text().strip() and
+            0<=time.monotonic()-live['monotonic']<=120, 'stale boot menu admission')
+    require(sha(Path('/sys/kernel/notes'))==NOTES_SHA256 and live['FPGA_loads']==0, 'boot/kernel boundary')
+    require(live['display_READY']==3 and live['capture_halted'] and live['display_halted'], 'boot display/capture unsafe')
+    require(len(live['FCLK_MHz'])==3 and all(abs(a-b)<.001 for a,b in zip(live['FCLK_MHz'],(100,1000/7,200))), 'boot clocks wrong')
+    gpio=Path('/sys/class/gpio/gpio960')
+    require((gpio/'direction').read_text().strip()=='out' and (gpio/'value').read_text().strip()=='0','boot camera not isolated')
+    require(sha(root/'game_assets.bin')==package['files']['game_assets.bin'], 'boot assets mismatch')
+    check_owners([(0x43000000,0x43020000),(0x43c00000,0x43c50000)])
+    print('FIXED720_QUALIFICATION_OK boot='+live['boot_id'])
+
+
 def inspect_package(root):
     """Pure file audit. Hashes bind raw reports and paired export payloads."""
     protected(root / 'package.json', 1024 * 1024)
     package = json.loads((root / 'package.json').read_text())
+    if package.get('software_scope')=='boot5_menu_only':
+        return inspect_boot5_menu(root,package)
     require(package['part'] == 'xc7z020clg400-2', 'wrong part')
     require(package['mode'] == 'fixed_control_720p_M52_D7_O2', 'wrong mode')
     require(package['capture_cells'] == [], 'capture still present')
@@ -128,6 +176,8 @@ def check_live(root=ROOT):
     require(stat.S_ISDIR(s.st_mode) and s.st_uid == 0 and not s.st_mode & 0o022,
             'unprotected task directory')
     package = inspect_package(root)
+    if package.get('software_scope')=='boot5_menu_only':
+        return check_boot5_menu(root,package)
     protected(root / 'load_receipt.json', 1024 * 1024)
     live = json.loads((root / 'load_receipt.json').read_text())
     require(live['boot_id'] == Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
@@ -249,12 +299,101 @@ def check_capture_admission(root, boot):
     print('CAPTURE720_QUALIFICATION_OK boot=' + boot)
 
 
+def check_beam_capture(root=Path('/run/game_live_camera/capture')):
+    """Admit the beam bridge against this boot's existing boot5/load receipts."""
+    state = root.lstat()
+    require(stat.S_ISDIR(state.st_mode) and state.st_uid == 0 and
+            not state.st_mode & 0o022, 'unprotected beam capture directory')
+    protected(root / 'capture_package.json', 1024 * 1024)
+    package = json.loads((root / 'capture_package.json').read_text())
+    require(package.get('scope') == 'beam720_capture_2', 'wrong beam capture scope')
+    require(package.get('production_directory') == str(root), 'wrong beam capture root')
+    require(package.get('format') == {'width': 1280, 'height': 720, 'stride': 5760,
+                                      'frame_span': 4147200, 'stores': 3},
+            'wrong beam capture format')
+    require(package.get('bridge_protocol') == 'FRAME sequence captured_ms slot writer; FRAME_DONE',
+            'wrong beam bridge protocol')
+    expected_files = {
+        'capture_worker.py', 'dphy_observer.py', 'libdphy_observer_mmio.so',
+        'pynq_vision/__init__.py', 'pynq_vision/constants.py',
+        'pynq_vision/hardware.py', 'pynq_vision/live_capture.py',
+        'pynq_vision/boundary_observer.py',
+        'pynq_vision/ov5640.py', 'pynq_vision/registers.py',
+        'pynq_vision/vdma.py', 'pynq_vision/video.py',
+    }
+    files = package.get('files')
+    require(isinstance(files, dict) and set(files) == expected_files,
+            'incomplete beam capture package')
+    for name, digest in files.items():
+        rel = Path(name)
+        require(not rel.is_absolute() and '..' not in rel.parts and
+                (len(rel.parts) == 1 or (len(rel.parts) == 2 and rel.parts[0] == 'pynq_vision')),
+                'unsafe beam capture filename')
+        protected(root / rel, 32 * 1024 * 1024)
+        require(sha(root / rel) == digest, 'beam capture file identity: ' + name)
+
+    # The capture process uses the qualification bundle copied from the same
+    # staged boot5 image. Validate those bytes and the same-boot startup receipt
+    # before consulting the fresh load receipt that originally admitted HDMI.
+    protected(root / 'package.json', 1024 * 1024)
+    q_package = json.loads((root / 'package.json').read_text())
+    require(q_package.get('software_scope') == 'boot5_menu_only',
+            'wrong beam boot qualification package')
+    source = Path('/run/game_single_image_720p/continuous')
+    for name in ('boot_start.json', 'load_receipt.json'):
+        protected(root / name, 1024 * 1024)
+        protected(source / name, 1024 * 1024)
+        require(sha(root / name) == sha(source / name), 'staged receipt identity: ' + name)
+    start = json.loads((root / 'boot_start.json').read_text())
+    boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    require(start.get('status') == 'STAGED' and start.get('boot_id') == boot and
+            0 <= time.monotonic() - float(start['monotonic']) <= 120 and
+            start.get('FPGA_loads') == 0 and
+            start.get('BOOT_sha256') == sha(Path('/boot/BOOT.BIN')),
+            'stale or mismatched beam boot receipt')
+    check_boot5_menu(root, q_package)
+
+
+def check_boot5_live(root, package):
+    """Reuse the actual BOOT5 cold-start provenance plus fresh idle DMA reads."""
+    state = root.lstat()
+    require(stat.S_ISDIR(state.st_mode) and state.st_uid == 0 and
+            not state.st_mode & 0o022, 'unprotected live directory')
+    source = Path('/run/game_single_image_720p/continuous')
+    require(package['production_directory'] == str(source) and
+            sha(source / 'package.json') == package['source_package_sha256'],
+            'live source package changed')
+    original = json.loads((source / 'package.json').read_text())
+    inspect_boot5_menu(source, original)
+    for name, digest in package['files'].items():
+        rel = Path(name)
+        require(not rel.is_absolute() and '..' not in rel.parts and
+                (len(rel.parts) == 1 or (len(rel.parts) == 2 and rel.parts[0] == 'pynq_vision')),
+                'unsafe live member')
+        protected(root / rel, 32 * 1024 * 1024)
+        require(sha(root / rel) == digest, 'live file identity: ' + name)
+    boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    start = json.loads((source / 'boot_start.json').read_text())
+    require(start['boot_id'] == boot and start['FPGA_loads'] == 0 and
+            sha(Path('/sys/kernel/notes')) == NOTES_SHA256, 'live boot/kernel boundary')
+    protected(root / 'capture_admission.json', 1024 * 1024)
+    live = json.loads((root / 'capture_admission.json').read_text())
+    require(live['MM2S_HALTED'] and live['MM2S_RS'] == 0 and live['MM2S_errors'] == 0,
+            'live display not stopped before shared owner acquisition')
+    check_capture_admission(root, boot)
+
+
 def check_capture(root=Path('/run/game_live_camera/capture')):
     """Keep legacy production admission; debug uses its own actual boot/load proof."""
     protected(root / 'capture_package.json', 1024 * 1024)
     package = json.loads((root / 'capture_package.json').read_text())
+    if package.get('scope') == 'beam720_capture_2':
+        return check_beam_capture(root)
+    if package['scope'] == 'native_hardware_720_camera_boot5_live':
+        return check_boot5_live(root, package)
     production4=package['scope']=='native_hardware_720_camera_production4'
-    production=package['scope'] in ('native_hardware_720_camera_production3','native_hardware_720_camera_production4')
+    production5=package['scope']=='native_hardware_720_camera_production5'
+    production=package['scope'] in ('native_hardware_720_camera_production3','native_hardware_720_camera_production4','native_hardware_720_camera_production5')
     receiver=package['scope']=='native_hardware_720_receiver_fault_diagnostic'
     if not production and not receiver and package['scope'] != 'native_hardware_720_crc_upstream_diagnostic':
         return check_capture_legacy(root)
@@ -269,7 +408,7 @@ def check_capture(root=Path('/run/game_live_camera/capture')):
         protected(root / rel, 32 * 1024 * 1024)
         require(sha(root / rel) == digest, 'diagnostic capture file identity: ' + name)
     boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-    source = Path(('/run/codex_rx_fault_' if receiver else '/run/codex_camera_prod4_' if production4 else '/run/codex_camera_prod3_' if production else '/run/codex_crc_upstream_') + boot[:8])
+    source = Path(('/run/codex_rx_fault_' if receiver else '/run/codex_camera_prod5_' if production5 else '/run/codex_camera_prod4_' if production4 else '/run/codex_camera_prod3_' if production else '/run/codex_crc_upstream_') + boot[:8])
     require(str(source) == package['diagnostic_directory'], 'wrong diagnostic directory/boot')
     for name, digest in package['diagnostic_files'].items():
         require(Path(name).name == name, 'unsafe diagnostic evidence name')
@@ -286,11 +425,20 @@ def check_capture(root=Path('/run/game_live_camera/capture')):
             program['bit_sha256'] == artifacts['sha256']['receiver_fault.bit' if receiver else 'system_wrapper.bit' if production else 'upstream_fault.bit'] and
             (program['hwh_sha256'] == artifacts['sha256']['system.hwh'] if production else program['ltx_sha256'] == artifacts['sha256']['receiver_fault.ltx' if receiver else 'upstream_fault.ltx']),
             'missing actual same-boot JTAG program proof')
-    if production4:
+    if production4 or production5:
         require(artifacts['status']=='PASS_PAIRED_ENGINEERING_ARTIFACTS_NOT_BOARD_QUALIFIED' and
                 sha(source/'camera.hwh')==artifacts['sha256']['system.hwh'] and
                 package['production_directory']==str(source),
-                'production4 paired export or HWH identity')
+                'production4/5 paired export or HWH identity')
+    if production5:
+        identity=json.loads((source/'board_identity.json').read_text())
+        original_boot=json.loads((source/'boot_manifest.json').read_text())
+        require(identity['boot_id']==boot and sha(source/'board_identity.json')==package['identity_sha256'] and
+                identity['boot_files']['BOOT.BIN']==package['boot_file'], 'production5 current boot identity')
+        require(sha(Path('/boot/BOOT.BIN'))==original_boot['sha256']==package['boot_file']['sha256'] and
+                Path('/boot/BOOT.BIN').stat().st_size==original_boot['bytes']==package['boot_file']['bytes'] and
+                original_boot['artifacts_sha256']['system_wrapper.bit']==program['bit_sha256'] and
+                original_boot['artifacts_sha256']['system.hwh']==program['hwh_sha256'], 'production5 SD/PL source pairing')
     require(startup['status'] == ('PASS_RECEIVER_FAULT_DIAGNOSTIC_STARTUP_NO_CAPTURE' if receiver else 'PASS_PRODUCTION_STARTUP_NO_CAPTURE' if production else 'PASS_UPSTREAM_DIAGNOSTIC_STARTUP_NO_CAPTURE') and
             startup['boot_id'] == boot and startup['temporary_loads'] == 1 and
             startup['explicit_streams'] == 0 and startup['DMA_arms'] == 0,

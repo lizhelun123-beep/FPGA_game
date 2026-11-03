@@ -51,6 +51,7 @@ static int valid_config(const GameConfig *config)
         !isfinite(config->height) || config->width <= 0 || config->height <= 0 ||
         !isfinite(config->physics_scale) || config->physics_scale < 1 ||
         config->physics_scale > 10000 ||
+        config->portal_b_exit_side < -1 || config->portal_b_exit_side > 1 ||
         !isfinite(config->width*config->physics_scale) ||
         !isfinite(config->height*config->physics_scale) ||
         config->max_models < 1 || config->max_models > GAME_MAX_MODELS ||
@@ -75,19 +76,39 @@ static int valid_config(const GameConfig *config)
         const GameLevelConfig *level = &config->levels[i];
         unsigned int mask = 0;
         if (!level->id || !level->reference || level->object_count < 1 ||
-            level->object_count > config->max_models) return 0;
+            (level->emitter.enabled != 0 && level->emitter.enabled != 1) ||
+            level->object_count > config->max_models-level->emitter.enabled)
+            return 0;
+        if (level->emitter.enabled) {
+            RayPoint direction = level->emitter.direction;
+            float norm = hypotf(direction.x, direction.y);
+            if (!inside(level->emitter.point, config) ||
+                !normalize(&direction) || fabsf(norm-1.0f) > 0.001f)
+                return 0;
+        }
         for (k = 0; k < i; ++k)
             if (config->levels[k].id == level->id) return 0;
         for (j = 0; j < level->object_count; ++j) {
+            const GameObjectConfig *rule = &level->objects[j];
             SceneObject object = level->objects[j].anchor;
             GameMotion motion = level->objects[j].motion;
             if (object.type < 0 || object.type >= RAY_OBJECT_TYPE_COUNT ||
                 (mask & (1U << object.type)) ||
                 motion < GAME_FIXED || motion > GAME_FREE ||
+                rule->use_template_geometry < GAME_GEOMETRY_CONFIGURED ||
+                rule->use_template_geometry > GAME_GEOMETRY_MARKER_TEMPLATE ||
+                (rule->use_template_geometry && motion != GAME_FREE) ||
+                (rule->use_template_geometry == GAME_GEOMETRY_PORTAL_TEMPLATE &&
+                 object.type != RAY_OBJECT_PORTAL_A && object.type != RAY_OBJECT_PORTAL_B) ||
+                (rule->use_template_geometry == GAME_GEOMETRY_MARKER_TEMPLATE &&
+                 object.type != RAY_OBJECT_MIRROR && object.type != RAY_OBJECT_WALL &&
+                 object.type != RAY_OBJECT_TARGET) ||
                 !model(&object, config)) return 0;
             mask |= 1U << object.type;
         }
-        if (!(mask & (1U << RAY_OBJECT_SOURCE)) ||
+        if ((level->emitter.enabled ?
+             !!(mask & (1U << RAY_OBJECT_SOURCE)) :
+             !(mask & (1U << RAY_OBJECT_SOURCE))) ||
             !(mask & (1U << RAY_OBJECT_TARGET)) ||
             !!(mask & (1U << RAY_OBJECT_PORTAL_A)) !=
             !!(mask & (1U << RAY_OBJECT_PORTAL_B))) return 0;
@@ -168,24 +189,36 @@ GameStatus game_session_select(GameSession *session, unsigned int level_id,
     return GAME_OK;
 }
 
-GameStatus game_session_start(GameSession *session, uint64_t now_ms)
+static GameStatus start_session(GameSession *session, uint64_t now_ms,
+                                int board_ready)
 {
     GameStatus status = game_session_tick(session, now_ms);
     if (status != GAME_OK) return status;
     if (session->view.state != GAME_PREPARING) return GAME_BAD_STATE;
-    if (!session->view.scene_valid) return session->view.scene_status;
-    if (!session->view.ready) return GAME_NEED_UNSOLVED;
+    if (!board_ready && !session->view.scene_valid) return session->view.scene_status;
+    if (session->view.scene_valid && !session->view.ready) return GAME_NEED_UNSOLVED;
     session->started_ms = now_ms;
     session->view.state = GAME_RUNNING;
     session->view.ready = 0;
     return GAME_OK;
 }
 
+GameStatus game_session_start(GameSession *session, uint64_t now_ms)
+{
+    return start_session(session,now_ms,0);
+}
+
+GameStatus game_session_start_after_board_ready(GameSession *session, uint64_t now_ms)
+{
+    return start_session(session,now_ms,1);
+}
+
 /* Uniform scaling only, matching pc_vision/host_bridge.c. All logical poses
  * come from the public effective models; no raw pose enters the solver.
  * The +1 preserves ray_game.c's inclusive boundary (extent-1).
  * No change to epsilon, intersections, portal semantics or 17-segment cap. */
-static int trace(const GameConfig *config, GameSnapshot *view)
+static int trace(const GameConfig *config, const GameLevelConfig *level,
+                 GameSnapshot *view)
 {
     SceneObject scaled[GAME_MAX_MODELS];
     float scale = config->physics_scale;
@@ -199,8 +232,16 @@ static int trace(const GameConfig *config, GameSnapshot *view)
         scaled[i].length *= scale;
         scaled[i].width *= scale;
     }
-    status = ray_game_trace(scaled, view->object_count,
-                           config->width*scale+1, config->height*scale+1, &view->ray);
+    if (level->emitter.enabled) {
+        RayPoint point = {level->emitter.point.x*scale,
+                           level->emitter.point.y*scale};
+        status = ray_game_trace_from_emitter_policy(scaled, view->object_count,
+                    config->width*scale+1, config->height*scale+1,
+                    point, level->emitter.direction, config->portal_b_exit_side, &view->ray);
+    } else {
+        status = ray_game_trace(scaled, view->object_count,
+                    config->width*scale+1, config->height*scale+1, &view->ray);
+    }
     for (i = 0; i < view->ray.segment_count; ++i) {
         view->ray.segments[i].start.x /= scale;
         view->ray.segments[i].start.y /= scale;
@@ -239,9 +280,31 @@ static int constrain(const GameSession *session, const GameSceneInput *input,
             effective.axis = effective.type == RAY_OBJECT_SOURCE ?
                              observed->source_direction : observed->axis;
         if (!model(&effective, session->config)) return 0;
+        if (rule->use_template_geometry) {
+            if (!isfinite(observed->length) || !isfinite(observed->width) ||
+                observed->length <= 0 || observed->width <= 0 ||
+                !isfinite(observed->length*session->config->physics_scale) ||
+                !isfinite(observed->width*session->config->physics_scale) ||
+                (effective.type == RAY_OBJECT_TARGET && observed->length != observed->width))
+                return 0;
+            effective.length = observed->length;
+            effective.width = observed->width;
+        }
         next->objects[i] = effective;
     }
-    return trace(session->config, next) == 0;
+    if (session->level->emitter.enabled) {
+        SceneObject *source = &next->objects[next->object_count++];
+        memset(source, 0, sizeof(*source));
+        source->type = RAY_OBJECT_SOURCE;
+        source->center = source->source_tip = session->level->emitter.point;
+        source->axis = source->source_direction = session->level->emitter.direction;
+        (void)normalize(&source->axis);
+        source->source_direction = source->axis;
+        source->direction_valid = 1;
+        source->length = session->config->model_sizes[RAY_OBJECT_SOURCE].x;
+        source->width = session->config->model_sizes[RAY_OBJECT_SOURCE].y;
+    }
+    return trace(session->config, session->level, next) == 0;
 }
 
 GameStatus game_session_submit(GameSession *session, const GameSceneInput *input,

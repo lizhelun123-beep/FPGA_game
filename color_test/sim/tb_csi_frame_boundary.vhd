@@ -46,7 +46,7 @@ begin
       sAxisTvalid=>sv,sAxisTready=>sr,sAxisTlast=>sl,MAxisClk=>vc,
       mAxisTdata=>vd,mAxisTvalid=>vv,mAxisTready=>vr,mAxisTlast=>vl,
       mAxisTuser=>vu,sOverflow=>ovf,aRst=>rst,CrcErrorCount=>crc_count,
-      FrameCount=>packet_count,dbgLLP=>dbg);
+      FrameCount=>packet_count,FrameStartEvent=>open,FrameEndEvent=>open,dbgLLP=>dbg);
 
   process(vc)
     variable c,n,e,y,x,bad,tails:natural:=0;

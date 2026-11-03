@@ -28,6 +28,46 @@ def save_png(path, image):
     data.tofile(str(path))
 
 
+def _write_json_atomic(path, record):
+    """Publish one complete Godot snapshot without exposing a partial file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(record, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+    temporary.replace(path)
+
+
+def _godot_snapshot(controller, scene, worker, now, cfg):
+    telemetry = worker.telemetry(now, cfg["stale_seconds"])
+    state = "DISCONNECTED" if telemetry["status"] == "DISCONNECTED" else controller.status(now)
+    if not controller.valid:
+        state = "STALE"
+    models = []
+    for model in controller.display:
+        models.append({
+            "type": model.type,
+            "center": [float(model.center[0]), float(model.center[1])],
+            "axis": [float(model.axis[0]), float(model.axis[1])],
+            "confidence": int(model.confidence),
+            "held": bool(model.held),
+        })
+    levels = cfg.get("board_game", {}).get("levels", [{"id": 1}])
+    level_id = int(levels[0].get("id", 1)) if levels else 1
+    return {
+        "generation": max(1, int(worker.metrics.get("connections", 0))),
+        "sequence": None if scene is None else int(scene.frame),
+        "captured_ms": None if scene is None else int(scene.capture_ms),
+        "level_id": level_id,
+        "state": state,
+        "models": models,
+        "segments": [[float(v) for v in segment] for segment in controller.ray.get("segments", [])],
+        "remaining_ms": None,
+        "display_status": controller.reason,
+        "origin": "board_uart_scene_v1",
+        "telemetry": telemetry,
+    }
+
+
 class SceneInput:
     def __init__(self, args, native, output=None):
         self.args, self.native, self.output = args, native, output
@@ -303,6 +343,7 @@ class SerialSceneInput:
         self.connected = False
         self.error = self.last_error = None
         self.last_rx = self.last_scene = None
+        self.last_valid_rx = None
         self.times = deque(maxlen=128)
         self.performance_log = None
         self.receive_now = None
@@ -331,11 +372,15 @@ class SerialSceneInput:
                 if not accepted:
                     continue
                 with self.condition:
+                    if reset:
+                        self.last_valid_rx = None
                     if self.latest is not None:
                         self.metrics["overwritten"] += 1
                         reset |= self.latest[4]  # Session reset survives coalescing.
                     self.latest = (scene, None, self.args.serial, False, reset, now)
                     self.last_scene, self.last_rx = scene, now
+                    if scene.valid:
+                        self.last_valid_rx = now
                     self.times.append(now)
                     self.metrics["scene_frames"] += 1
             self.metrics["crc_or_format_errors"] = self.parser.rejected
@@ -359,7 +404,7 @@ class SerialSceneInput:
 
     def telemetry(self, now, stale_after):
         with self.condition:
-            age = None if self.last_rx is None else max(0, now-self.last_rx)
+            age = None if self.last_valid_rx is None else max(0, now-self.last_valid_rx)
             status = ("DISCONNECTED" if not self.connected else
                       "STALE" if age is None or age >= stale_after or not self.last_scene.valid else "LIVE")
             # Keep low-rate measurements visible independently of freshness.
@@ -400,6 +445,7 @@ class SerialSceneInput:
                     with self.condition:
                         self.connected = True
                         self.last_scene = self.last_rx = None
+                        self.last_valid_rx = None
                         self.times.clear()
                         self.metrics["connections"] += 1
                     while not self.stop.is_set():
@@ -429,14 +475,32 @@ class SerialSceneInput:
 
 def run_game(args):
     cfg = load_game_config(args.game_config)
+    if args.stale_after is not None:
+        cfg["stale_seconds"] = args.stale_after
     if args.scene_timeout is not None:
-        if args.scene_timeout <= cfg["dropout_seconds"]:
-            raise ValueError("Scene timeout must exceed dropout_seconds")
         cfg["timeout_seconds"] = args.scene_timeout
+    if cfg["timeout_seconds"] <= max(cfg["dropout_seconds"], cfg["stale_seconds"]):
+        raise ValueError("Scene timeout must exceed dropout_seconds and stale_seconds")
     mapper = PlaneMapper.load(args.calibration) if args.calibration else PlaneMapper()
     serial_mode = bool(args.serial)
     native = NativeVision(args.cc, recognition=not serial_mode)
-    controller = GameController(native, mapper, cfg)
+    fixed_emitter = None
+    if serial_mode:
+        beam = cfg.get("real_scene", {}).get("beam", {})
+        if beam.get("version") != 1 or beam.get("coordinate_space") not in (None, "camera_pixels_uncalibrated"):
+            native.close()
+            raise ValueError("Serial mode requires the canonical real_scene.beam emitter")
+        try:
+            point = tuple(float(v) for v in beam["emitter_point"])
+            direction = tuple(float(v) for v in beam["emitter_direction"])
+            if mapper.calibration is not None:
+                direction = mapper.direction(point, direction, 32)
+                point = mapper.point(point)
+        except (KeyError, TypeError, ValueError) as error:
+            native.close()
+            raise ValueError("Invalid real_scene.beam emitter") from error
+        fixed_emitter = {"point": point, "direction": direction}
+    controller = GameController(native, mapper, cfg, fixed_emitter=fixed_emitter)
     output = args.output
     try:
         if output:
@@ -462,6 +526,7 @@ def run_game(args):
     screenshot = 0
     records = deque(maxlen=256) if serial_mode else []
     serial_log = None
+    godot_scene = Path(args.godot_scene) if args.godot_scene else None
     started = time.monotonic()
     canvas = None
 
@@ -484,6 +549,9 @@ def run_game(args):
             cv2.namedWindow("Light Lab", cv2.WINDOW_AUTOSIZE)
             cv2.setMouseCallback("Light Lab", on_click)
         worker.start()
+        if godot_scene:
+            _write_json_atomic(godot_scene, _godot_snapshot(controller, None, worker,
+                                                             time.monotonic(), cfg))
         while True:
             now = time.monotonic()
             for scene, frame, event_name, persistent, independent, received in worker.poll():
@@ -501,6 +569,9 @@ def run_game(args):
                     if accepted < limit:
                         worker.select(worker.index+1)
             controller.tick(now)
+            if godot_scene:
+                _write_json_atomic(godot_scene, _godot_snapshot(controller, current_scene,
+                                                                 worker, now, cfg))
             while actions:
                 action = actions.popleft()
                 if action == "Start/Pause":
@@ -562,7 +633,7 @@ def run_game(args):
                         note = f"Snapshot saved ({screenshot})"
                     else:
                         note = "Snapshot requires --output NEW_DIRECTORY"
-            telemetry = worker.telemetry(now, cfg["dropout_seconds"]) if serial_mode else None
+            telemetry = worker.telemetry(now, cfg["stale_seconds"]) if serial_mode else None
             canvas = view.render(controller, telemetry["status"] if serial_mode else worker.status,
                                  now, name, note, telemetry)
             renders += 1

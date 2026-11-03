@@ -75,6 +75,9 @@ entity LLP is
 	  
 	  CrcErrorCount : out std_logic_vector(31 downto 0);
       FrameCount : out std_logic_vector(31 downto 0);
+      -- Passive, ECC-qualified short-packet events in MAxisClk domain.
+      FrameStartEvent : out std_logic;
+      FrameEndEvent : out std_logic;
       
       dbgLLP : out CsiDebugLib.DebugLLP_t
    );
@@ -296,6 +299,13 @@ mECC <= mECC_HeaderOut(31 downto 24);
 mWC <= mECC_HeaderOut(23 downto 8); 
 mVC <= mECC_HeaderOut(7 downto 6);
 mDT <= mECC_HeaderOut(5 downto 0);
+
+-- Observe exactly the header decode used by FrameStart below. No additional
+-- handshake, buffering or control signal is inserted into the packet path.
+FrameStartEvent <= '1' when mRst = '0' and mECC_Valid = '1' and
+                           mDT = kDTFrameStart else '0';
+FrameEndEvent <= '1' when mRst = '0' and mECC_Valid = '1' and
+                         mDT = "000001" else '0';
 
 -- A short FS packet queues a marker for the next accepted payload. It must
 -- never change the SOF field of a valid, stalled packet-register beat.

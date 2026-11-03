@@ -23,11 +23,15 @@ class GameView:
 
     def render(self, controller, source_status, now, name="", note="", telemetry=None):
         image = np.full((self.height, self.width, 3), (27, 20, 16), np.uint8)
+        stale = controller.display_stale(now)
+        status = "DISCONNECTED" if source_status == "DISCONNECTED" else controller.status(now)
+        if source_status in ("LIVE", "STALE", "DISCONNECTED"):
+            source_status = status
         self.text(image, "LIGHT LAB  /  SCENE GAME", (24, 33), .85, (248, 231, 205))
         mode = "LOCKED" if controller.locked else ("PAUSED" if controller.paused else "RUNNING")
         calibrated = controller.mapper.calibration is not None
         mapping = "CALIBRATED / mm" if calibrated else "UNCALIBRATED PREVIEW / no real-world scale"
-        self.text(image, f"{mapping}   |   {mode}", (24, 59), .5,
+        self.text(image, f"{mapping}   |   {mode}   |   {status}", (24, 59), .5,
                   (132, 215, 128) if calibrated else (80, 191, 255))
         for label, (x0, y0, x1, y1) in self.buttons:
             cv2.rectangle(image, (x0, y0), (x1, y1), (68, 57, 44), -1)
@@ -52,19 +56,21 @@ class GameView:
         for y in np.arange(0, mapper.height, step):
             cv2.line(image, pixel((0, y)), pixel((mapper.width, y)), (48, 41, 35), 1)
         cv2.rectangle(image, (x0, y0), (x1, y1), (100, 106, 87), 1)
+        if stale and controller.display:
+            self.text(image, "STALE / LAST OBSERVATION", (x0+12, y0+25), .6, (80, 191, 255))
         for model in controller.display:
             color = COLORS[model.type]
-            if model.held:
+            if stale or model.held:
                 color = tuple(c//2 for c in color)
             center = pixel(model.center)
             if model.type == "TARGET":
                 radius = max(1, round(model.size[0]*scale/2))
                 cv2.circle(image, center, radius, color, -1, cv2.LINE_AA)
-                cv2.circle(image, center, round(radius*.55), (40, 65, 35), 2, cv2.LINE_AA)
+                cv2.circle(image, center, round(radius*.55), (20, 32, 17) if stale else (40, 65, 35), 2, cv2.LINE_AA)
             elif model.type == "MIRROR":
                 a, b = (pixel(p) for p in model.mirror_endpoints())
                 cv2.line(image, a, b, color, max(2, round(model.size[1]*scale)), cv2.LINE_AA)
-                cv2.line(image, a, b, (250, 251, 250), 2, cv2.LINE_AA)
+                cv2.line(image, a, b, (125, 125, 125) if stale else (250, 251, 250), 2, cv2.LINE_AA)
             else:
                 corners = polygon(model.vertices())
                 cv2.fillConvexPoly(image, corners, tuple(c//3 for c in color), cv2.LINE_AA)
@@ -82,16 +88,20 @@ class GameView:
         for x, y, ex, ey in controller.ray["segments"]:
             start, end = pixel((x, y)), pixel((ex, ey))
             cv2.line(image, start, end, (22, 31, 35), 7, cv2.LINE_AA)
-            cv2.line(image, start, end, (42, 225, 255), 3, cv2.LINE_AA)
-        if controller.ray["success"]:
+            cv2.line(image, start, end, (65, 112, 127) if stale else (42, 225, 255), 3, cv2.LINE_AA)
+        if controller.ray["success"] and not stale and not (controller.paused or controller.locked):
             self.text(image, "TARGET REACHED", (self.width-260, 33), .75, COLORS["TARGET"])
         age = "still photo" if controller.persistent else (
-            "--" if controller.last_received is None else f"{now-controller.last_received:.2f}s")
+            "--" if controller.age(now) is None else f"{controller.age(now):.2f}s")
         if telemetry is not None:
-            age = "--" if telemetry["age"] is None else f"{telemetry['age']:.2f}s RX"
-            source_status += f" {telemetry['hz']:.1f} Hz RX"
+            # The reader may already hold a newer scene the UI has not adopted.
+            # Geometry age belongs to the accepted usable scene, not that packet.
+            source_status = status + f" {telemetry['hz']:.1f} Hz RX"
+        if ((controller.paused or controller.locked) and not controller.display_persistent and
+                controller.display_received is not None):
+            age += f" / view {max(0, now-controller.display_received):.2f}s"
         rx_frame = telemetry["frame"] if telemetry is not None else controller.frame
-        self.text(image, f"INPUT {source_status}  |  {name[:24]}  |  frame RX={rx_frame} view={controller.display_frame}  |  age={age}",
+        self.text(image, f"INPUT {source_status}  |  {name[:24]}  |  frame RX={rx_frame} view={controller.display_frame}  |  valid age={age}",
                   (24, self.height-94), .48)
         self.text(image, f"{controller.reason}  |  objects={len(controller.display)}  |  ray={controller.ray['termination']}  |  hits={','.join(controller.ray['hits']) or '-'}",
                   (24, self.height-69), .5)

@@ -1,0 +1,20 @@
+<svg data-model-length="64" data-model-width="64" xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="-36 -36 72 72">
+  <title>Green target, circular 64-unit silhouette</title>
+  <desc>Transparent sprite centered at 0,0, pixel 36,36. Nominal target is a circle of radius 32. Static ready-state art; activation effects belong to the presentation scene.</desc>
+  <defs>
+    <linearGradient id="rim" x1="0" y1="-32" x2="0" y2="32" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B9EF72"/><stop offset="0.48" stop-color="#7CC957"/><stop offset="1" stop-color="#419A55"/>
+    </linearGradient>
+    <radialGradient id="core" cx="0.38" cy="0.3" r="0.75">
+      <stop stop-color="#FFFBDD"/><stop offset="1" stop-color="#DCEBB7"/>
+    </radialGradient>
+  </defs>
+  <circle r="32" fill="url(#rim)" stroke="#406348" stroke-width="2.6"/>
+  <circle r="23.5" fill="#4A9960" stroke="#E7FFC4" stroke-width="1.8"/>
+  <circle r="17.3" fill="url(#core)" stroke="#2D764F" stroke-width="2"/>
+  <circle r="9" fill="#75C666" stroke="#4C9D59" stroke-width="1.6"/>
+  <circle cx="-2.1" cy="-2.1" r="3.1" fill="#B6E997"/>
+  <path d="M-23-15A27.5 27.5 0 0 1-8-26" fill="none" stroke="#F3FFDB" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M9 27A28 28 0 0 0 25 12" fill="none" stroke="#318251" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M15-22 16.5-18.5 20-17 16.5-15.5 15-12 13.5-15.5 10-17 13.5-18.5Z" fill="#F9FFDC"/>
+</svg>

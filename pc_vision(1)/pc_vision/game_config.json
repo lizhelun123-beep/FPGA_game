@@ -1,0 +1,1513 @@
+{
+  "version": 1,
+  "model_sizes": {
+    "SOURCE": [
+      54,
+      40
+    ],
+    "MIRROR": [
+      140,
+      12
+    ],
+    "WALL": [
+      160,
+      30
+    ],
+    "TARGET": [
+      64,
+      64
+    ],
+    "PORTAL_A": [
+      164,
+      56
+    ],
+    "PORTAL_B": [
+      164,
+      56
+    ]
+  },
+  "physics_scale": 100,
+  "position_alpha": 0.45,
+  "direction_alpha": 0.4,
+  "match_distance": 60,
+  "dropout_seconds": 0.25,
+  "stale_seconds": 0.25,
+  "timeout_seconds": 6.0,
+  "minimum_confidence": 0,
+  "board_game": {
+    "version": 1,
+    "coordinate_space": "uncalibrated_preview",
+    "width": 1279,
+    "height": 719,
+    "max_models": 6,
+    "render_max_ray_segments": 5,
+    "scene_max_age_ms": 250,
+    "duration_ms": 180000,
+    "pump_tick_ms": 10,
+    "render": {
+      "version": 1,
+      "scene_rect": [
+        80,
+        192,
+        880,
+        420
+      ]
+    },
+    "star_threshold_ms": [
+      60000,
+      120000
+    ],
+    "menu": {
+      "version": 1,
+      "width": 1280,
+      "height": 800,
+      "level_rects": [
+        [
+          20,
+          20,
+          238,
+          36
+        ],
+        [
+          268,
+          20,
+          238,
+          36
+        ],
+        [
+          516,
+          20,
+          238,
+          36
+        ],
+        [
+          764,
+          20,
+          238,
+          36
+        ],
+        [
+          1012,
+          20,
+          238,
+          36
+        ],
+        [
+          20,
+          62,
+          238,
+          36
+        ],
+        [
+          268,
+          62,
+          238,
+          36
+        ],
+        [
+          516,
+          62,
+          238,
+          36
+        ],
+        [
+          764,
+          62,
+          238,
+          36
+        ],
+        [
+          1012,
+          62,
+          238,
+          36
+        ],
+        [
+          20,
+          104,
+          238,
+          36
+        ],
+        [
+          268,
+          104,
+          238,
+          36
+        ],
+        [
+          516,
+          104,
+          238,
+          36
+        ],
+        [
+          764,
+          104,
+          238,
+          36
+        ],
+        [
+          1012,
+          104,
+          238,
+          36
+        ]
+      ],
+      "start_rect": [
+        480,
+        650,
+        320,
+        100
+      ]
+    },
+    "levels": [
+      {
+        "id": 1,
+        "reference": "sample_photo/075.png",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              619.5625,
+              293.5625
+            ],
+            "axis": [
+              0.01750082002013317,
+              0.999846848921685
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              345,
+              104
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            384.2645710292071,
+            445.4748918199791
+          ],
+          "direction": [
+            0.8347785464670302,
+            -0.5505858501254755
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": true
+      },
+      {
+        "id": 2,
+        "reference": "sample_photo/076.png",
+        "objects": [
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              281,
+              125
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              859.5,
+              323.625
+            ],
+            "axis": [
+              0.03489967944791605,
+              -0.9993908206374684
+            ]
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              427.125,
+              121.75
+            ],
+            "axis": [
+              0.03489967944791642,
+              -0.9993908206374685
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            962.4393387468272,
+            326.3581545086337
+          ],
+          "direction": [
+            -0.995646995647318,
+            0.09320439935147647
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": true
+      },
+      {
+        "id": 3,
+        "reference": "sample_photo/077.png",
+        "objects": [
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              312,
+              283
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              847.5,
+              507.5
+            ],
+            "axis": [
+              0,
+              -1
+            ]
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              431.75,
+              119.625
+            ],
+            "axis": [
+              0.017500820020133392,
+              -0.9998468489216851
+            ]
+          },
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              293.125,
+              105.125
+            ],
+            "axis": [
+              0.6819761448916702,
+              -0.7313744169703338
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            936.8586270145963,
+            518.3658465957369
+          ],
+          "direction": [
+            -0.999621786994274,
+            0.027500599382094867
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": true
+      },
+      {
+        "id": 4,
+        "name": "林间折光",
+        "reference": "generated/level_04",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              480,
+              135
+            ],
+            "axis": [
+              -0.80480807,
+              -0.59353515
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              1013,
+              152
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              1002,
+              568
+            ],
+            "axis": [
+              -0.44191497,
+              0.89705694
+            ]
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              755,
+              141
+            ],
+            "axis": [
+              -0.10726966,
+              -0.99422996
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            1207,
+            208
+          ],
+          "direction": [
+            -0.99460872,
+            0.10369903
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 5,
+        "name": "双门流转",
+        "reference": "generated/level_05",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              750,
+              137
+            ],
+            "axis": [
+              -0.77105701,
+              0.63676612
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              223,
+              561
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              488,
+              354
+            ],
+            "axis": [
+              -0.87509484,
+              0.48395147
+            ]
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              497,
+              575
+            ],
+            "axis": [
+              0.92020099,
+              0.39144621
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            72,
+            275
+          ],
+          "direction": [
+            0.97861425,
+            -0.20570403
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 6,
+        "name": "光影回廊",
+        "reference": "generated/level_06",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              499,
+              575
+            ],
+            "axis": [
+              0.74699438,
+              -0.66483035
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              1020,
+              145
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              1011,
+              568
+            ],
+            "axis": [
+              -0.20096807,
+              0.97959779
+            ]
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              239,
+              349
+            ],
+            "axis": [
+              0.69784096,
+              0.71625275
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            72,
+            568
+          ],
+          "direction": [
+            0.9735061,
+            -0.22866103
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 7,
+        "name": "镜面回旋",
+        "reference": "generated/level_07",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              481,
+              361
+            ],
+            "axis": [
+              0.7616167,
+              0.64802778
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              499,
+              136
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            72,
+            187
+          ],
+          "direction": [
+            0.90973726,
+            -0.41518443
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 8,
+        "name": "穿林寻光",
+        "reference": "generated/level_08",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              488,
+              153
+            ],
+            "axis": [
+              0.8768136,
+              0.48083043
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              494,
+              365
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            72,
+            395
+          ],
+          "direction": [
+            0.94744635,
+            0.3199147
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 9,
+        "name": "交错之门",
+        "reference": "generated/level_09",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              749,
+              150
+            ],
+            "axis": [
+              0.81056099,
+              -0.58565423
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              1016,
+              571
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              1002,
+              348
+            ],
+            "axis": [
+              -0.99930444,
+              -0.03729131
+            ]
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              496,
+              569
+            ],
+            "axis": [
+              0.98393948,
+              0.17850236
+            ]
+          },
+          {
+            "type": "WALL",
+            "motion": "free",
+            "center": [
+              221,
+              363
+            ],
+            "axis": [
+              0.62652905,
+              -0.77939807
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            72,
+            468
+          ],
+          "direction": [
+            0.98276601,
+            -0.18485392
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 10,
+        "name": "光的岔路",
+        "reference": "generated/level_10",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              238,
+              361
+            ],
+            "axis": [
+              -0.11270464,
+              -0.99362853
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              760,
+              564
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "WALL",
+            "motion": "free",
+            "center": [
+              500,
+              152
+            ],
+            "axis": [
+              -0.65396746,
+              -0.75652267
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            1207,
+            505
+          ],
+          "direction": [
+            -0.99197024,
+            0.1264715
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 11,
+        "name": "回环迷径",
+        "reference": "generated/level_11",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              756,
+              568
+            ],
+            "axis": [
+              0.54323178,
+              0.83958277
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              496,
+              345
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "WALL",
+            "motion": "free",
+            "center": [
+              230,
+              566
+            ],
+            "axis": [
+              -0.26484602,
+              -0.96429072
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            72,
+            535
+          ],
+          "direction": [
+            0.9577559,
+            -0.28758241
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 12,
+        "name": "星光渡口",
+        "reference": "generated/level_12",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              220,
+              145
+            ],
+            "axis": [
+              0.79977016,
+              -0.60030633
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              236,
+              563
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              225,
+              365
+            ],
+            "axis": [
+              -0.49902203,
+              -0.8665893
+            ]
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              491,
+              556
+            ],
+            "axis": [
+              0.968702,
+              -0.24822658
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            1207,
+            465
+          ],
+          "direction": [
+            -0.98109431,
+            0.19353024
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 13,
+        "name": "远山映照",
+        "reference": "generated/level_13",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              224,
+              567
+            ],
+            "axis": [
+              -0.70539097,
+              -0.70881843
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              742,
+              147
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "WALL",
+            "motion": "free",
+            "center": [
+              1009,
+              138
+            ],
+            "axis": [
+              0.16696612,
+              0.98596263
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            72,
+            282
+          ],
+          "direction": [
+            0.9418254,
+            -0.33610255
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 14,
+        "name": "旋光庭院",
+        "reference": "generated/level_14",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              486,
+              361
+            ],
+            "axis": [
+              -0.3029154,
+              0.95301745
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              226,
+              355
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              1003,
+              359
+            ],
+            "axis": [
+              0.27282402,
+              -0.96206395
+            ]
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              494,
+              560
+            ],
+            "axis": [
+              0.98259618,
+              -0.18575453
+            ]
+          },
+          {
+            "type": "WALL",
+            "motion": "free",
+            "center": [
+              753,
+              137
+            ],
+            "axis": [
+              0.96487214,
+              -0.26271992
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            72,
+            410
+          ],
+          "direction": [
+            0.94383111,
+            -0.33042826
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      },
+      {
+        "id": 15,
+        "name": "寻光终章",
+        "reference": "generated/level_15",
+        "origin": "seeded_random_layout",
+        "solvability": "not_checked",
+        "objects": [
+          {
+            "type": "MIRROR",
+            "motion": "free",
+            "center": [
+              493,
+              146
+            ],
+            "axis": [
+              0.91023316,
+              -0.41409613
+            ]
+          },
+          {
+            "type": "TARGET",
+            "motion": "free",
+            "center": [
+              750,
+              352
+            ],
+            "axis": [
+              1,
+              0
+            ]
+          },
+          {
+            "type": "PORTAL_A",
+            "motion": "free",
+            "center": [
+              239,
+              141
+            ],
+            "axis": [
+              -0.95786399,
+              -0.28722217
+            ]
+          },
+          {
+            "type": "PORTAL_B",
+            "motion": "free",
+            "center": [
+              240,
+              560
+            ],
+            "axis": [
+              0.98891247,
+              0.14849959
+            ]
+          },
+          {
+            "type": "WALL",
+            "motion": "free",
+            "center": [
+              740,
+              563
+            ],
+            "axis": [
+              -0.8757523,
+              0.48276072
+            ]
+          }
+        ],
+        "emitter": {
+          "point": [
+            72,
+            361
+          ],
+          "direction": [
+            0.99564235,
+            -0.093254
+          ],
+          "coordinate_space": "uncalibrated_preview"
+        },
+        "playable": false
+      }
+    ],
+    "selection": {
+      "version": 1,
+      "slot_count": 15,
+      "columns": 5,
+      "rows": 3,
+      "random_seed": 20261027
+    }
+  },
+  "real_scene": {
+    "version": 1,
+    "coordinate_space": "camera_pixels_uncalibrated",
+    "beam": {
+      "version": 1,
+      "width": 1280,
+      "height": 720,
+      "emitter_point": [
+        32,
+        500
+      ],
+      "emitter_direction": [
+        1,
+        0
+      ],
+      "max_age_ms": 0,
+      "stability_algorithm": "B",
+      "detector_profile": "restored_markers",
+      "portal_b_exit_side": 1,
+      "display_timeout_ms": 6000,
+      "display_dropout_ms": 250
+    },
+    "active_markers": {
+      "MIRROR": "yellow body and two black endpoint disks; no white center strip",
+      "PORTAL_A": "blue body, white solid disk and white ring; no center strip or AprilTags",
+      "PORTAL_B": "orange body, white solid disk and white ring; no center strip or AprilTags",
+      "WALL": "dark body with two transverse white end bars",
+      "TARGET": "green circular disk or annulus",
+      "SOURCE": "virtual emitter only; no physical observation",
+      "geometry": "historical marker/carrier fit in camera pixels; Mirror uses historical 0.66 finite-surface ratio, Target uses circular boundary; measured AprilTag templates below are inactive history"
+    },
+    "geometry_status": "restored_legacy_marker_camera_pixel_preview",
+    "note": "User measurements supersede CAD/ZIP dimensions. Object templates are mm; each local fit projects them into camera pixels. Common-plane/lens calibration is still unavailable: ray solving remains an explicitly uncalibrated camera-pixel preview, not mm accuracy.",
+    "physical_measurements_confirmed": true,
+    "tag_body_mm": 12,
+    "portal_templates": {
+      "PORTAL_A": {
+        "reference": "sample_photo(1)/094.png",
+        "ids": [
+          10,
+          11,
+          12
+        ],
+        "corners": [
+          [
+            [
+              -24,
+              6
+            ],
+            [
+              -36,
+              6
+            ],
+            [
+              -36,
+              -6
+            ],
+            [
+              -24,
+              -6
+            ]
+          ],
+          [
+            [
+              36,
+              6
+            ],
+            [
+              24,
+              6
+            ],
+            [
+              24,
+              -6
+            ],
+            [
+              36,
+              -6
+            ]
+          ],
+          [
+            [
+              6,
+              12
+            ],
+            [
+              -6,
+              12
+            ],
+            [
+              -6,
+              0
+            ],
+            [
+              6,
+              0
+            ]
+          ]
+        ],
+        "center": [
+          0,
+          0
+        ],
+        "axis": [
+          1,
+          0
+        ],
+        "effective_size": [
+          55,
+          25.0
+        ],
+        "body_size": [
+          80,
+          25
+        ],
+        "reference_camera_corners": [
+          [
+            [
+              462.5596008300781,
+              335.3746337890625
+            ],
+            [
+              430.05682373046875,
+              336.0357666015625
+            ],
+            [
+              431.9872741699219,
+              372.3968200683594
+            ],
+            [
+              464.6312561035156,
+              367.9013366699219
+            ]
+          ],
+          [
+            [
+              630.0006713867188,
+              327.0704650878906
+            ],
+            [
+              596.9082641601562,
+              328.6817932128906
+            ],
+            [
+              596.5789184570312,
+              365.4067687988281
+            ],
+            [
+              632.1560668945312,
+              360.2248229980469
+            ]
+          ],
+          [
+            [
+              548.89794921875,
+              313.72314453125
+            ],
+            [
+              516.2315673828125,
+              315.73406982421875
+            ],
+            [
+              519.0941162109375,
+              349.7267150878906
+            ],
+            [
+              551.7430419921875,
+              347.65594482421875
+            ]
+          ]
+        ],
+        "unit": "mm",
+        "tag_quarter_turns": [
+          0,
+          0,
+          0
+        ],
+        "image_handedness": -1,
+        "reference_scale_px_per_mm": 2.827145699668258
+      },
+      "PORTAL_B": {
+        "reference": "sample_photo(1)/095.png",
+        "ids": [
+          20,
+          21,
+          22
+        ],
+        "corners": [
+          [
+            [
+              -24,
+              6
+            ],
+            [
+              -36,
+              6
+            ],
+            [
+              -36,
+              -6
+            ],
+            [
+              -24,
+              -6
+            ]
+          ],
+          [
+            [
+              36,
+              6
+            ],
+            [
+              24,
+              6
+            ],
+            [
+              24,
+              -6
+            ],
+            [
+              36,
+              -6
+            ]
+          ],
+          [
+            [
+              6,
+              12
+            ],
+            [
+              -6,
+              12
+            ],
+            [
+              -6,
+              0
+            ],
+            [
+              6,
+              0
+            ]
+          ]
+        ],
+        "center": [
+          0,
+          0
+        ],
+        "axis": [
+          1,
+          0
+        ],
+        "effective_size": [
+          55,
+          25.0
+        ],
+        "body_size": [
+          80,
+          25
+        ],
+        "reference_camera_corners": [
+          [
+            [
+              520.0355224609375,
+              315.8331298828125
+            ],
+            [
+              485.4906921386719,
+              316.2743225097656
+            ],
+            [
+              486.7413330078125,
+              349.5696105957031
+            ],
+            [
+              520.5715942382812,
+              350.6644287109375
+            ]
+          ],
+          [
+            [
+              698.8784790039062,
+              323.2152099609375
+            ],
+            [
+              663.9658203125,
+              322.9443054199219
+            ],
+            [
+              664.3977661132812,
+              356.40142822265625
+            ],
+            [
+              699.0289306640625,
+              355.83685302734375
+            ]
+          ],
+          [
+            [
+              609.0342407226562,
+              299.9617614746094
+            ],
+            [
+              575.5466918945312,
+              299.5262451171875
+            ],
+            [
+              572.9652099609375,
+              332.95623779296875
+            ],
+            [
+              608.0430908203125,
+              334.4659423828125
+            ]
+          ]
+        ],
+        "unit": "mm",
+        "tag_quarter_turns": [
+          0,
+          0,
+          0
+        ],
+        "image_handedness": -1,
+        "reference_scale_px_per_mm": 2.839096198654415
+      }
+    },
+    "stability_default": "B",
+    "plane_calibration_confirmed": false,
+    "physical_geometry_mm": {
+      "source": "user_confirmed_2026-10-27",
+      "PORTAL": {
+        "body_size": [
+          80,
+          25
+        ],
+        "body_shape": "capsule",
+        "tag_body_size": [
+          12,
+          12
+        ],
+        "tag_centers": [
+          [
+            -30,
+            0
+          ],
+          [
+            30,
+            0
+          ],
+          [
+            0,
+            6
+          ]
+        ],
+        "physical_markers": [
+          "AprilTag"
+        ],
+        "entry_length": 55,
+        "entry_side_offset": 12.5,
+        "entry_basis": "derived straight long sides: 80-25=55; not a centerline, circle or ring marker"
+      },
+      "MIRROR": {
+        "body_size": [
+          80,
+          25
+        ],
+        "black_dot_diameter": 8,
+        "black_dot_center_offset": 27,
+        "reflective_line_length": 46,
+        "reflective_line_center_offset": [
+          0,
+          0
+        ]
+      },
+      "WALL": {
+        "body_size": [
+          80,
+          25
+        ],
+        "white_mark_width": 9,
+        "white_mark_end_gap": 5,
+        "white_mark_span": 25,
+        "white_mark_centers": [
+          [
+            -30.5,
+            0
+          ],
+          [
+            30.5,
+            0
+          ]
+        ]
+      },
+      "TARGET": {
+        "diameter": 30
+      }
+    }
+  },
+  "model_sizes_unit": "legacy_preview_units_not_mm"
+}

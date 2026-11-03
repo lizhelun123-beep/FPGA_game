@@ -4,6 +4,7 @@
 #include "game_linux_display.h"
 
 #include <string.h>
+#include <stdlib.h>
 #if defined(__linux__)
 #include <errno.h>
 #include <time.h>
@@ -267,6 +268,41 @@ GameDisplayStatus game_display_status(GameLinuxDisplay *d)
     return GAME_DISPLAY_OK;
 }
 
+GameDisplayStatus game_display_resume_scanout(GameLinuxDisplay *d)
+{
+    GameDisplayPlatform *p;
+    GameDisplayStatus s;
+    uint32_t park;
+    uint64_t now;
+    if (!d) return GAME_DISPLAY_BAD_ARGUMENT;
+    if (d->state==GAME_DISPLAY_SCANNING) return game_display_status(d);
+    if (d->state!=GAME_DISPLAY_RETAINED || !d->owner_active ||
+        !d->allocation_owned || !d->buffer || !d->armed || !d->configured)
+        return GAME_DISPLAY_BAD_STATE;
+    /* Temporarily admit the read-only health check.  Restore RETAINED on any
+     * uncertainty; no stop/reset/release is an implicit recovery action. */
+    d->state=GAME_DISPLAY_SCANNING;
+    s=game_display_status(d);
+    if (s!=GAME_DISPLAY_OK) { d->state=GAME_DISPLAY_RETAINED; return s; }
+    if (!d->update_pending) return GAME_DISPLAY_OK;
+    p=&d->platform;
+    if (p->read(p->context,PARK,&park) ||
+        (park&31U)!=d->pending_slot ||
+        p->write(p->context,SR,FRAME_EVENT) ||
+        p->barrier(p->context) || p->now_ms(p->context,&now)) {
+        d->state=GAME_DISPLAY_RETAINED;
+        return GAME_DISPLAY_IO;
+    }
+    d->last_park=park;
+    d->retire_started_ms=d->retire_previous_ms=now;
+    /* Restart exactly like a fresh queued store.  The current frame reader may
+     * still report the previously active store until its next START; phase 0
+     * permits that transition, then requires the normal two fresh events. */
+    d->retire_phase=0;
+    d->retire_events=0;
+    return GAME_DISPLAY_OK;
+}
+
 static GameDisplayStatus halt_and_finish(GameLinuxDisplay *d, unsigned timeout)
 {
     GameDisplayPlatform *p;
@@ -298,37 +334,58 @@ static GameDisplayStatus halt_and_finish(GameLinuxDisplay *d, unsigned timeout)
  * deliberately stronger than a PARK write/readback or a stale IRQ flag.
  * PYNQ MM2S uses frame-count pacing and rotating frame stores;no reset/error
  * clearing is borrowed. CPU writes resume only after this retirement fence. */
-static GameDisplayStatus retire_to(GameLinuxDisplay *d,unsigned target,unsigned timeout)
+static GameDisplayStatus poll_retirement(GameLinuxDisplay *d)
 {
     GameDisplayPlatform *p=&d->platform;
     GameDisplayStatus s;
-    uint64_t start,now,previous;
+    uint64_t now;
     uint32_t park;
-    unsigned i,phase=0,events=0;
-    if (p->now_ms(p->context,&start)) return GAME_DISPLAY_IO;
-    previous=start;
-    for (i=0;i<=timeout;++i) {
-        s=game_display_status(d); if (s!=GAME_DISPLAY_OK) return s;
-        if (p->read(p->context,PARK,&park)) return GAME_DISPLAY_IO;
-        d->last_park=park;
-        if ((park&31U)!=target) return GAME_DISPLAY_BAD_STATE;
-        if (((park>>16)&31U)==target) {
-            if (!phase || (phase==1 && (d->last_status&FRAME_EVENT))) {
-                if (p->write(p->context,SR,FRAME_EVENT) || p->barrier(p->context)) return GAME_DISPLAY_IO;
-                phase=1;
-            } else if (phase==1) phase=2; /* observed W1C low before re-arm */
-            else if (d->last_status&FRAME_EVENT) {
-                ++events; ++d->fresh_frame_events;
-                if (events==2) { d->current_slot=target; return GAME_DISPLAY_OK; }
-                if (p->write(p->context,SR,FRAME_EVENT) || p->barrier(p->context)) return GAME_DISPLAY_IO;
-                phase=1;
+    if (p->now_ms(p->context,&now) || now<d->retire_previous_ms) return GAME_DISPLAY_IO;
+    d->retire_previous_ms=now;
+    if (now-d->retire_started_ms>=d->retire_timeout_ms) return GAME_DISPLAY_TIMEOUT;
+    s=game_display_status(d); if (s!=GAME_DISPLAY_OK) return s;
+    if (p->read(p->context,PARK,&park)) return GAME_DISPLAY_IO;
+    d->last_park=park;
+    if ((park&31U)!=d->pending_slot) return GAME_DISPLAY_BAD_STATE;
+    if (((park>>16)&31U)==d->pending_slot) {
+        if (!d->retire_phase || (d->retire_phase==1 && (d->last_status&FRAME_EVENT))) {
+            if (p->write(p->context,SR,FRAME_EVENT) || p->barrier(p->context)) return GAME_DISPLAY_IO;
+            d->retire_phase=1;
+        } else if (d->retire_phase==1) d->retire_phase=2;
+        else if (d->last_status&FRAME_EVENT) {
+            ++d->retire_events; ++d->fresh_frame_events;
+            if (d->retire_events==2) {
+                d->current_slot=d->pending_slot; d->update_pending=0;
+                return GAME_DISPLAY_OK;
             }
-        } else if (phase) return GAME_DISPLAY_BAD_STATE;
-        if (p->now_ms(p->context,&now) || now<previous) return GAME_DISPLAY_IO;
-        previous=now;
-        if (now-start>=timeout || i==timeout) break;
-        if (p->wait_ms(p->context,1)) return GAME_DISPLAY_IO;
+            if (p->write(p->context,SR,FRAME_EVENT) || p->barrier(p->context)) return GAME_DISPLAY_IO;
+            d->retire_phase=1;
+        }
+    } else if (d->retire_phase) return GAME_DISPLAY_BAD_STATE;
+    return GAME_DISPLAY_BUSY;
+}
+GameDisplayStatus game_display_poll(GameLinuxDisplay *d)
+{
+    GameDisplayStatus s;
+    if (!d) return GAME_DISPLAY_BAD_ARGUMENT;
+    if (d->state!=GAME_DISPLAY_SCANNING) return GAME_DISPLAY_BAD_STATE;
+    if (!d->update_pending) return game_display_status(d);
+    s=poll_retirement(d);
+    if (s!=GAME_DISPLAY_OK && s!=GAME_DISPLAY_BUSY) d->state=GAME_DISPLAY_RETAINED;
+    return s;
+}
+static GameDisplayStatus wait_retirement(GameLinuxDisplay *d)
+{
+    GameDisplayStatus s;
+    unsigned i;
+    for (i=0;i<=d->retire_timeout_ms;++i) {
+        s=game_display_poll(d);
+        if (s!=GAME_DISPLAY_BUSY) return s;
+        if (d->platform.wait_ms(d->platform.context,1)) {
+            d->state=GAME_DISPLAY_RETAINED; return GAME_DISPLAY_IO;
+        }
     }
+    d->state=GAME_DISPLAY_RETAINED;
     return GAME_DISPLAY_TIMEOUT;
 }
 static GameDisplayStatus continuous_update(GameLinuxDisplay *d,const VisionCanvas *source,unsigned timeout)
@@ -342,14 +399,36 @@ static GameDisplayStatus continuous_update(GameLinuxDisplay *d,const VisionCanva
     if (p->read(p->context,PARK,&park)) return GAME_DISPLAY_IO;
     if ((park&31U)!=d->current_slot || ((park>>16)&31U)!=d->current_slot)
         return GAME_DISPLAY_BAD_STATE;
-    memset(dst,0,d->frame_span);
+    /* Padding was initialized at prepare; every active byte is replaced.
+     * Re-clearing the entire4MiB store adds traffic without changing pixels. */
     for (y=0;y<d->mode.height;++y)
         memcpy(dst+(size_t)y*d->mode.stride,source->data+(size_t)y*source->stride,GAME_DISPLAY_HSIZE);
     if (p->flush(p->context,dst,d->physical+(size_t)slot*d->frame_span,d->frame_span) ||
         p->barrier(p->context)) return GAME_DISPLAY_IO;
     if (p->write(p->context,PARK,(park&~31U)|slot) || p->barrier(p->context)) return GAME_DISPLAY_IO;
     ++d->submitted;
-    return retire_to(d,slot,timeout);
+    d->pending_slot=slot; d->retire_phase=d->retire_events=0;
+    d->retire_timeout_ms=timeout;
+    if (p->now_ms(p->context,&d->retire_started_ms)) return GAME_DISPLAY_IO;
+    d->retire_previous_ms=d->retire_started_ms; d->update_pending=1;
+    return GAME_DISPLAY_OK;
+}
+
+GameDisplayStatus game_display_submit(GameLinuxDisplay *d,const VisionCanvas *source,unsigned timeout)
+{
+    GameDisplayStatus s;
+    uintptr_t a,b;
+    if (!d || !source || !timeout || timeout>1000) return GAME_DISPLAY_BAD_ARGUMENT;
+    if (d->state!=GAME_DISPLAY_SCANNING || d->frame_count!=3) return GAME_DISPLAY_BAD_STATE;
+    if (d->update_pending) return GAME_DISPLAY_BUSY;
+    if (!vision_canvas_valid(source) || source->width!=(int)d->mode.width ||
+        source->height!=(int)d->mode.height) return GAME_DISPLAY_BAD_ARGUMENT;
+    a=(uintptr_t)source->data; b=(uintptr_t)d->buffer;
+    if (!b || source->capacity>UINTPTR_MAX-a || d->span>UINTPTR_MAX-b ||
+        (a<b+d->span && b<a+source->capacity)) return GAME_DISPLAY_BAD_ARGUMENT;
+    s=continuous_update(d,source,timeout);
+    if (s!=GAME_DISPLAY_OK) d->state=GAME_DISPLAY_RETAINED;
+    return s;
 }
 
 GameDisplayStatus game_display_update(GameLinuxDisplay *d,const VisionCanvas *source,unsigned timeout)
@@ -365,9 +444,8 @@ GameDisplayStatus game_display_update(GameLinuxDisplay *d,const VisionCanvas *so
     if (!b || source->capacity>UINTPTR_MAX-a || d->span>UINTPTR_MAX-b ||
         (a<b+d->span && b<a+source->capacity)) return GAME_DISPLAY_BAD_ARGUMENT;
     if (d->frame_count==3) {
-        s=continuous_update(d,source,timeout);
-        if (s!=GAME_DISPLAY_OK) d->state=GAME_DISPLAY_RETAINED;
-        return s;
+        s=game_display_submit(d,source,timeout);
+        return s==GAME_DISPLAY_OK ? wait_retirement(d) : s;
     }
     s=game_display_status(d);
     if (s!=GAME_DISPLAY_OK) return s;
@@ -398,6 +476,7 @@ GameDisplayStatus game_display_stop(GameLinuxDisplay *d,unsigned timeout)
     if (p->close(p->context)) return GAME_DISPLAY_IO;
     d->owner_active=0;
     d->span=0;
+    d->update_pending=0;
     d->state=GAME_DISPLAY_EMPTY;
     return GAME_DISPLAY_OK;
 }
@@ -491,6 +570,8 @@ static int linux_qualify(void *context, const GameDisplayMode *mode)
  * clock/reset change, DMA reset or library constructor is used by acquire. */
 #if defined(__linux__)
 typedef struct {
+    struct LinuxLiveSessionImpl *session;
+    int shared_lease;
     int memory_fd, lease_fd, lease_owned, armed;
     void *map[3]; /* MM2S, existing dynclk, existing VTC; one 4KiB page each */
     int xlnk_fd, allocation_id, allocation_uncertain, buffer_unmapped, timing_dirty;
@@ -498,6 +579,13 @@ typedef struct {
     uint32_t physical;
     size_t span;
 } LinuxDisplayResources;
+typedef struct LinuxLiveSessionImpl {
+    int open;
+    int lease_fd;
+    int memory_fd;
+    LinuxDisplayResources display;
+    LinuxDisplayResources capture;
+} LinuxLiveSessionImpl;
 static LinuxDisplayResources linux_resources={.memory_fd=-1,.lease_fd=-1,.xlnk_fd=-1};
 static int linux_finish(void *context);
 static int linux_barrier(void *context);
@@ -505,7 +593,9 @@ static int linux_wait(void *context,unsigned ms);
 
 static void linux_resources_init(LinuxDisplayResources *r)
 {
-    memset(r,0,sizeof *r); r->memory_fd=-1; r->lease_fd=-1; r->xlnk_fd=-1;
+    struct LinuxLiveSessionImpl *session=r?r->session:NULL;
+    memset(r,0,sizeof *r); r->session=session;
+    r->memory_fd=-1; r->lease_fd=-1; r->xlnk_fd=-1;
 }
 static int linux_map_regions(LinuxDisplayResources *r,const off_t offsets[3])
 {
@@ -545,8 +635,11 @@ static int linux_close(void *context)
     }
     if (r->lease_fd>=0) {
         fd=r->lease_fd; r->lease_fd=-1; r->lease_owned=0;
-        if (close(fd)) return -1;
+        /* Session roles borrow one shared flock descriptor. The session
+         * closes it only after both role contexts have reached EMPTY. */
+        if (!r->shared_lease && close(fd)) return -1;
     }
+    r->shared_lease=0;
     return 0;
 }
 static int linux_acquire(void *context)
@@ -554,9 +647,18 @@ static int linux_acquire(void *context)
     LinuxDisplayResources *r=(LinuxDisplayResources *)context;
     const off_t offsets[3]={0x43010000,0x43c00000,0x43c10000};
     struct stat st;
-    if (r!=&linux_resources || game_display_linux_preflight()!=GAME_DISPLAY_OK ||
+    if (!r || (r!=&linux_resources && !r->session) ||
         r->memory_fd>=0 || r->lease_fd>=0 || r->map[0] || r->map[1] || r->map[2]) return -1;
     linux_resources_init(r);
+    if (r->session) {
+        LinuxLiveSessionImpl *session=r->session;
+        if (!session->open || session->lease_fd<0 || session->memory_fd<0) return -1;
+        r->lease_fd=session->lease_fd; r->lease_owned=1; r->shared_lease=1;
+        r->memory_fd=dup(session->memory_fd);
+        if (r->memory_fd<0) return -1;
+        return linux_map_regions(r,offsets);
+    }
+    if (game_display_linux_preflight()!=GAME_DISPLAY_OK) return -1;
     r->lease_fd=open("/run/lock/game_linux_display.lock",O_RDWR|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
     if (r->lease_fd<0 || fstat(r->lease_fd,&st) || !S_ISREG(st.st_mode) ||
         st.st_nlink!=1 || st.st_uid!=geteuid() || (st.st_mode&0077) ||
@@ -866,3 +968,93 @@ void game_display_linux_platform(GameDisplayPlatform *p)
     p->now_ms=linux_now; p->wait_ms=linux_wait;
     p->acquire=linux_acquire; p->close=linux_close;
 }
+
+#if defined(__linux__)
+static int linux_session_qualify(void *context,const GameDisplayMode *mode)
+{
+    LinuxDisplayResources *r=(LinuxDisplayResources *)context;
+    LinuxLiveSessionImpl *session;
+    struct stat st;
+    if (!r || !r->session || !control_720p(mode)) return -1;
+    session=r->session;
+    if (session->open) return 0;
+    /* Qualification must precede /dev/mem, flock, xlnk or MMIO access. */
+    if (game_display_linux_preflight()!=GAME_DISPLAY_OK) return -1;
+    session->lease_fd=open("/run/lock/game_linux_display.lock",O_RDWR|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
+    if (session->lease_fd<0 || fstat(session->lease_fd,&st) || !S_ISREG(st.st_mode) ||
+        st.st_nlink!=1 || st.st_uid!=geteuid() || (st.st_mode&0077) ||
+        flock(session->lease_fd,LOCK_EX|LOCK_NB)) goto failed;
+    session->memory_fd=open("/dev/mem",O_RDWR|O_SYNC|O_CLOEXEC);
+    if (session->memory_fd<0) goto failed;
+    session->open=1;
+    return 0;
+failed:
+    if (session->memory_fd>=0) { close(session->memory_fd); session->memory_fd=-1; }
+    if (session->lease_fd>=0) { close(session->lease_fd); session->lease_fd=-1; }
+    return -1;
+}
+
+GameDisplayStatus game_linux_live_session_open(GameLinuxLiveSession *session)
+{
+    LinuxLiveSessionImpl *impl;
+    if (!session || session->impl) return GAME_DISPLAY_BAD_STATE;
+    impl=calloc(1,sizeof *impl);
+    if (!impl) return GAME_DISPLAY_IO;
+    impl->lease_fd=-1; impl->memory_fd=-1;
+    impl->display.session=impl; impl->capture.session=impl;
+    linux_resources_init(&impl->display); linux_resources_init(&impl->capture);
+    impl->display.session=impl; impl->capture.session=impl;
+    session->impl=impl;
+    return GAME_DISPLAY_OK;
+}
+
+GameDisplayStatus game_linux_live_session_platform(GameLinuxLiveSession *session,
+    GameLinuxLiveRole role, GameDisplayPlatform *platform)
+{
+    LinuxLiveSessionImpl *impl;
+    LinuxDisplayResources *resource;
+    if (!session || !session->impl || !platform ||
+        (role!=GAME_LINUX_LIVE_DISPLAY && role!=GAME_LINUX_LIVE_CAPTURE))
+        return GAME_DISPLAY_BAD_ARGUMENT;
+    impl=(LinuxLiveSessionImpl *)session->impl;
+    resource=role==GAME_LINUX_LIVE_DISPLAY?&impl->display:&impl->capture;
+    game_display_linux_platform(platform);
+    platform->context=resource; platform->qualify=linux_session_qualify;
+    return GAME_DISPLAY_OK;
+}
+
+GameDisplayStatus game_linux_live_session_close(GameLinuxLiveSession *session)
+{
+    LinuxLiveSessionImpl *impl;
+    if (!session || !session->impl) return GAME_DISPLAY_BAD_ARGUMENT;
+    impl=(LinuxLiveSessionImpl *)session->impl;
+    if (impl->display.armed || impl->capture.armed ||
+        impl->display.allocation_id || impl->capture.allocation_id ||
+        impl->display.allocation_uncertain || impl->capture.allocation_uncertain ||
+        impl->display.memory_fd>=0 || impl->capture.memory_fd>=0 ||
+        impl->display.map[0] || impl->display.map[1] || impl->display.map[2] ||
+        impl->capture.map[0] || impl->capture.map[1] || impl->capture.map[2])
+        return GAME_DISPLAY_BAD_STATE;
+    impl->open=0;
+    if (impl->memory_fd>=0) { if (close(impl->memory_fd)) return GAME_DISPLAY_IO; impl->memory_fd=-1; }
+    if (impl->lease_fd>=0) { if (close(impl->lease_fd)) return GAME_DISPLAY_IO; impl->lease_fd=-1; }
+    free(impl); session->impl=NULL; return GAME_DISPLAY_OK;
+}
+
+int game_linux_live_session_can_exit(const GameLinuxLiveSession *session)
+{
+    /* An allocated-but-not-yet-qualified session is still an owner object;
+     * callers must close it explicitly before unloading the backend. */
+    return !session || !session->impl;
+}
+#else
+GameDisplayStatus game_linux_live_session_open(GameLinuxLiveSession *session)
+{ (void)session; return GAME_DISPLAY_UNQUALIFIED; }
+GameDisplayStatus game_linux_live_session_platform(GameLinuxLiveSession *session,
+    GameLinuxLiveRole role, GameDisplayPlatform *platform)
+{ (void)session; (void)role; (void)platform; return GAME_DISPLAY_UNQUALIFIED; }
+GameDisplayStatus game_linux_live_session_close(GameLinuxLiveSession *session)
+{ (void)session; return GAME_DISPLAY_UNQUALIFIED; }
+int game_linux_live_session_can_exit(const GameLinuxLiveSession *session)
+{ return !session || !session->impl; }
+#endif

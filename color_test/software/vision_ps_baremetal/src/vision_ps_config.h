@@ -71,6 +71,54 @@
 #define VISION_GREEN_TARGET_MIN_ELLIPSE_PERCENT 90U
 
 #define VISION_SAMPLE_STEP 4
+/* Restored old blocks: HDMI reference samples span pale yellow/orange/blue.
+ * These gates only propose bodies; endpoint/shape/ambiguity checks still
+ * establish identity. Legacy/tag profiles keep their original calibration. */
+#define VISION_RESTORED_YELLOW_H_MIN 24U
+#define VISION_RESTORED_YELLOW_H_MAX 36U
+#define VISION_RESTORED_YELLOW_S_MIN 25U
+#define VISION_RESTORED_YELLOW_V_MIN 100U
+#define VISION_RESTORED_ORANGE_H_MIN 4U
+#define VISION_RESTORED_ORANGE_H_MAX 26U
+#define VISION_RESTORED_ORANGE_S_MIN 35U
+#define VISION_RESTORED_ORANGE_V_MIN 90U
+#define VISION_RESTORED_BLUE_H_MIN 90U
+#define VISION_RESTORED_BLUE_H_MAX 130U
+/* Blue in the dim HDMI references has S around30..50. Keep hue/value and all
+ * shape/endpoint gates while preventing a narrow S floor from splitting it. */
+#define VISION_RESTORED_BLUE_S_MIN 25U
+#define VISION_RESTORED_BLUE_V_MIN 60U
+#define VISION_RESTORED_GREEN_H_MIN 34U
+#define VISION_RESTORED_GREEN_H_MAX 86U
+#define VISION_RESTORED_GREEN_S_MIN 28U
+#define VISION_RESTORED_GREEN_V_MIN 45U
+#define VISION_RESTORED_WHITE_S_MAX 40U
+#define VISION_RESTORED_WHITE_V_MIN 150U
+/* Portal-local white may acquire a warm cast; body-relative V plus the full
+ * solid/ring layout still establish identity. Global white/WALL stay at40. */
+#define VISION_RESTORED_PORTAL_WHITE_S_MAX 65U
+/* Shared Portal A/B radial fallback. Blue/orange carriers still come from
+ * unchanged HSV/area/aspect/fill gates. Local tinted white is usable only
+ * with a body-coloured center and a unique, multi-sector ring. */
+#define VISION_RESTORED_PORTAL_RING_WHITE_S_MAX 80U
+#define VISION_RESTORED_PORTAL_RING_SECTOR_MIN 0.08f
+#define VISION_RESTORED_PORTAL_A_RING_SECTOR_MIN 0.04f
+#define VISION_RESTORED_PORTAL_RING_SECTORS_REQUIRED 3U
+#define VISION_RESTORED_PORTAL_RING_INNER_WHITE_MAX 0.30f
+#define VISION_RESTORED_PORTAL_RING_CENTER_BODY_MIN 0.50f
+#define VISION_RESTORED_PORTAL_RING_DIRECTION_MIN 0.04f
+#define VISION_RESTORED_PORTAL_A_RING_WHITE_MIN 0.14f
+#define VISION_RESTORED_PORTAL_RING_RADIUS 0.25f
+#define VISION_RESTORED_PORTAL_B_MARKER_SPAN_RATIO 0.685f
+/* A adopts the same nominal marker/body ratio for the same carrier layout.
+ * This is a fallback prior, not a new physical measurement of Portal A. */
+#define VISION_RESTORED_PORTAL_A_MARKER_SPAN_RATIO VISION_RESTORED_PORTAL_B_MARKER_SPAN_RATIO
+/* Bounded displacement of the endpoint-pair center from the coarse colored
+ * body center, as a fraction of its measured long dimension. */
+#define VISION_RESTORED_PORTAL_CENTER_SHIFT_MAX 0.15f
+/* Screen reference end bars occupy108..128 cells. Keep bounded size, paired
+ * bar geometry and dark corridor checks rather than accepting dark bodies. */
+#define VISION_RESTORED_WALL_MARKER_MAX_SAMPLES 256U
 #define VISION_MIN_COMPONENT_SAMPLES 13U
 #define VISION_MAX_FRAME_FRACTION_PERCENT 85U
 #define VISION_MORPHOLOGY_ENABLE 1

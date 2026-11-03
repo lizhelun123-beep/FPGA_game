@@ -50,8 +50,8 @@
       "proc_sys_reset_200M": "",
       "axis_subset_converter_0": "",
       "MIPI_D_PHY_RX_0": "",
-      "axis_color_highlight_0": "",
-      "MIPI_CSI_2_RX_0": ""
+      "MIPI_CSI_2_RX_0": "",
+      "axis_color_highlight_0": ""
     },
     "interface_ports": {
       "DDR": {
@@ -3961,6 +3961,23 @@
           }
         }
       },
+      "MIPI_CSI_2_RX_0": {
+        "vlnv": "digilentinc.com:ip:MIPI_CSI_2_RX:1.2",
+        "xci_name": "system_MIPI_CSI_2_RX_0_0",
+        "xci_path": "ip\\system_MIPI_CSI_2_RX_0_0\\system_MIPI_CSI_2_RX_0_0.xci",
+        "inst_hier_path": "MIPI_CSI_2_RX_0",
+        "parameters": {
+          "kDebug": {
+            "value": "false"
+          },
+          "kGenerateAXIL": {
+            "value": "true"
+          },
+          "kVersionMinor": {
+            "value": "2"
+          }
+        }
+      },
       "axis_color_highlight_0": {
         "vlnv": "xilinx.com:module_ref:axis_color_highlight:1.0",
         "xci_name": "system_axis_color_highlight_0_0",
@@ -4149,23 +4166,6 @@
                 "value_src": "default_prop"
               }
             }
-          }
-        }
-      },
-      "MIPI_CSI_2_RX_0": {
-        "vlnv": "digilentinc.com:ip:MIPI_CSI_2_RX:1.2",
-        "xci_name": "system_MIPI_CSI_2_RX_0_0",
-        "xci_path": "ip\\system_MIPI_CSI_2_RX_0_0\\system_MIPI_CSI_2_RX_0_0.xci",
-        "inst_hier_path": "MIPI_CSI_2_RX_0",
-        "parameters": {
-          "kDebug": {
-            "value": "false"
-          },
-          "kGenerateAXIL": {
-            "value": "true"
-          },
-          "kVersionMinor": {
-            "value": "2"
           }
         }
       }
@@ -4476,8 +4476,8 @@
           "axi_mem_intercon/S00_ACLK",
           "axi_mem_intercon/M00_ACLK",
           "display_rst_axis/slowest_sync_clk",
-          "axis_color_highlight_0/aclk",
-          "MIPI_CSI_2_RX_0/video_aclk"
+          "MIPI_CSI_2_RX_0/video_aclk",
+          "axis_color_highlight_0/aclk"
         ]
       },
       "proc_sys_reset_150M1_peripheral_reset": {

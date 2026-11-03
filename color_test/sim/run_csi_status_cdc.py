@@ -72,6 +72,7 @@ def main():
                 assert not re.search(r'\b(?:entity|of|work\.)\s*ResetBridge\b', path.read_text()), path
     vhdl = [core / (n + '.vhd') for n in ['CsiDebugLib', 'CsiSyncAsync', 'CsiSyncAsyncReset',
         'SimpleFIFO', 'ECC', 'CRC16_behavioral', 'LM', 'LLP', 'MIPI_CSI2_Rx',
+        'AxisBoundaryProbe', 'CsiBoundaryObserver',
         'CSIStatusBridge', 'MIPI_CSI_2_RX_v1_0_S_AXI_LITE', 'MIPI_CSI2_RxTop']]
     test = ROOT / 'color_test/sim/tb_csi_status_cdc.vhd'
     source = vhdl + [test, Path(__file__), VIVADO / 'data/verilog/src/glbl.v',

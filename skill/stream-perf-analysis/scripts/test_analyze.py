@@ -31,7 +31,7 @@ class SnapshotTests(unittest.TestCase):
         rows = snapshot(1, 10, 10000) + snapshot(2, 20, 40000)
         for report, n, total in ((1, 2, 10000), (2, 3, 50000)):
             rows.append(dict(connection=1, report=report, stage="transport", n=n,
-                             total=total, maximum=total, unit="us"))
+                             total=total, maximum=min(total, 40000), unit="us"))
         rows.sort(key=lambda r: r["report"])
         result = run(rows, contract)
         stages = result["last_window"]["stages"]
@@ -149,6 +149,23 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(result["valid_windows"], 0)
         self.assertTrue(result["boundaries"][0]["reason"].startswith(
             "window_total_exceeds_maximum"))
+
+    def test_new_maximum_cannot_exceed_new_samples_total(self):
+        rows = snapshot(1, 10, 10000) + snapshot(2, 11, 11000)
+        for row in rows:
+            row["maximum"] = 1000 if row["report"] == 1 else 5000
+        result = run(rows)
+        self.assertEqual(result["valid_windows"], 0)
+        self.assertTrue(result["boundaries"][0]["reason"].startswith(
+            "new_maximum_exceeds_window_total"))
+
+    def test_new_maximum_boundary_and_retained_old_maximum(self):
+        rows = snapshot(1, 10, 10000) + snapshot(2, 11, 15000) + snapshot(3, 12, 15001)
+        for row in rows:
+            row["maximum"] = 1000 if row["report"] == 1 else 5000
+        result = run(rows)
+        self.assertEqual(result["valid_windows"], 2)
+        self.assertEqual(result["last_window"]["stages"]["read_audio"]["delta_total_us"], 1)
 
 
 if __name__ == "__main__":

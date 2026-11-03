@@ -46,7 +46,7 @@ use IEEE.STD_LOGIC_1164.ALL;
 entity mipi_csi2_rx_top is
    Generic (
       kVersionMajor : natural := 0; -- TCL-propagated from VLNV
-      kVersionMinor : natural := 0; -- TCL-propagated from VLNV
+      kVersionMinor : natural := 3; -- TCL-propagated from VLNV
       kTargetDT : string := "RAW10";
       kGenerateAXIL : boolean := false;
       kDebug : boolean := false;
@@ -98,6 +98,14 @@ entity mipi_csi2_rx_top is
       m_axis_video_tready   : in std_logic;
       m_axis_video_tlast    : out std_logic;
       m_axis_video_tuser    : out std_logic_vector(0 downto 0);
+
+      -- Passive taps from the actual capture VDMA input. These pins must
+      -- share video_aclk; they never drive or qualify an AXI stream signal.
+      ObserveVdmaValid : in std_logic := '0';
+      ObserveVdmaReady : in std_logic := '0';
+      ObserveVdmaSof : in std_logic := '0';
+      ObserveVdmaEol : in std_logic := '0';
+      ObserveVdmaKeep : in std_logic_vector(2 downto 0) := "111";
       
       video_aresetn        : in std_logic; --available when the AXI-Lite interface is disabled
       video_aclk           : in std_logic;
@@ -142,8 +150,18 @@ architecture Behavioral of mipi_csi2_rx_top is
    signal xFrameCount, xCrcErrorCount, xStatusSequence : std_logic_vector(31 downto 0);
    signal xStatusRequest, xStatusBusy : std_logic;
    signal rbFifoOverflow, xFifoOverflow : std_logic;
+   signal vFifoOverflow, vFrameStart, vFrameEnd : std_logic;
+   signal vAxisValid, vAxisLast : std_logic;
+   signal vAxisUser : std_logic_vector(0 downto 0);
+   signal vAxisData : std_logic_vector(C_M_AXIS_TDATA_WIDTH-1 downto 0);
+   signal vObservation, xObservation : std_logic_vector(767 downto 0);
+   signal xObserveArm, xObserveFreeze, vObserveArm, vObserveFreeze : std_logic;
    
 begin
+   m_axis_video_tdata <= vAxisData;
+   m_axis_video_tvalid <= vAxisValid;
+   m_axis_video_tlast <= vAxisLast;
+   m_axis_video_tuser <= vAxisUser;
     
 InputDataGen: for i in 0 to kLaneCount-1 generate
     DataLane0: if i = 0 generate
@@ -204,14 +222,16 @@ MIPI_CSI2_Rx_inst: entity work.MIPI_CSI2_Rx
       aClkEnable => aClkEnable,      
       
       --axi stream signals
-      m_axis_video_tdata    => m_axis_video_tdata,
-      m_axis_video_tvalid   => m_axis_video_tvalid,
+      m_axis_video_tdata    => vAxisData,
+      m_axis_video_tvalid   => vAxisValid,
       m_axis_video_tready   => m_axis_video_tready,
-      m_axis_video_tlast    => m_axis_video_tlast,
-      m_axis_video_tuser    => m_axis_video_tuser,
+      m_axis_video_tlast    => vAxisLast,
+      m_axis_video_tuser    => vAxisUser,
       
 	  CrcErrorCount => CrcErrorCount,
 	  FrameCount 	=> FrameCount,
+      FrameStartEvent => vFrameStart,
+      FrameEndEvent => vFrameEnd,
 	  FifoOverflow  => rbFifoOverflow,
 	  
       video_aresetn        => vRst_n,
@@ -223,12 +243,33 @@ MIPI_CSI2_Rx_inst: entity work.MIPI_CSI2_Rx
 -- AXI-Lite interface for control and status
 -------------------------------------------------------------------------------
 YesAXILITE: if kGenerateAXIL generate
+   -- Reset only with the external video reset, not the CSI soft reset used
+   -- during cleanup. A frozen first fault survives sensor/receiver isolation.
+   BoundaryObservation: entity work.CsiBoundaryObserver
+     port map (Clk => video_aclk, Resetn => video_aresetn,
+               Arm => vObserveArm, Freeze => vObserveFreeze,
+               FsEvent => vFrameStart, FeEvent => vFrameEnd,
+               CsiValid => vAxisValid, CsiReady => m_axis_video_tready,
+               CsiSof => vAxisUser(0), CsiEol => vAxisLast,
+               VdmaValid => ObserveVdmaValid, VdmaReady => ObserveVdmaReady,
+               VdmaSof => ObserveVdmaSof, VdmaEol => ObserveVdmaEol,
+               VdmaKeep => ObserveVdmaKeep, Overflow => vFifoOverflow,
+               Words => vObservation);
+   SyncVideoOverflow: entity work.CsiSyncAsync
+     generic map (kResetTo => '0', kStages => 2, kResetPolarity => '0')
+     port map (aReset => video_aresetn, aIn => rbFifoOverflow,
+               OutClk => video_aclk, oOut => vFifoOverflow);
    StatusSnapshot: entity work.CSIStatusBridge
+     generic map (ObservationWidth => 768)
      port map (SourceClk => video_aclk, SourcePackets => FrameCount,
-               SourceCrc => CrcErrorCount, DestClk => s_axi_lite_aclk,
+               SourceCrc => CrcErrorCount, SourceObservation => vObservation,
+               DestClk => s_axi_lite_aclk,
                DestResetn => s_axi_lite_aresetn, Request => xStatusRequest,
+               Arm => xObserveArm, Freeze => xObserveFreeze,
+               SourceArm => vObserveArm, SourceFreeze => vObserveFreeze,
                Busy => xStatusBusy,
-               Packets => xFrameCount, Crc => xCrcErrorCount, SnapshotSequence => xStatusSequence);
+               Packets => xFrameCount, Crc => xCrcErrorCount,
+               Observation => xObservation, SnapshotSequence => xStatusSequence);
    SyncOverflowStatus: entity work.CsiSyncAsync
     generic map (
        kResetTo => '0',
@@ -255,6 +296,9 @@ YesAXILITE: if kGenerateAXIL generate
        StatusSequence => xStatusSequence,
        StatusRequest => xStatusRequest,
        StatusBusy => xStatusBusy,
+       Observation => xObservation,
+       ObserveArm => xObserveArm,
+       ObserveFreeze => xObserveFreeze,
 	   FifoOverflow  => xFifoOverflow,
        S_AXI_ACLK   => s_axi_lite_aclk,
        S_AXI_ARESETN   => s_axi_lite_aresetn,

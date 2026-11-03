@@ -26,6 +26,20 @@
 
 - `migrate_integrate.tcl`：把颜色高亮模块接入视频 AXI4-Stream 数据通路。
 - `refresh_mipi_ip.tcl`：刷新迁移后的 MIPI IP。
+- `prepare_boundary_observer.tcl`：把当前 BD 的 CSI 实例升级到本仓库的1.3
+  观测接口，将实际 `axi_vdma_1/S_AXIS_S2MM` 的 valid/ready/SOF/EOL/TKEEP
+  信号扇出到被动输入，检查与 CSI 视频时钟同网、CSI40位/VDMA24位格式，
+  验证并保存 BD；不启动综合、实现、硬件连接或导出。用户从仓库根目录运行：
+
+  ```powershell
+  .\color_test\tools\vivado_nocd.bat -mode batch -notrace -source color_test/tools/prepare_boundary_observer.tcl
+  ```
+
+  末尾追加 `-tclargs --generate` 时才刷新 BD 输出产品和 wrapper，仍不启动综合。
+  此入口不改旧 build1..5/export/BOOT 回执；**不能在它之后运行旧
+  `camera_production.tcl prepare`**，该历史入口会恢复 CSI1.2 参数和准入契约。
+  新1.3硬件必须经本次实际编译的时序/CDC/资源和 BIT/HWH 配对检查后使用；
+  旧 build5 部署包不能作为已包含观测逻辑的制品。
 - `rebuild_debug_hub.tcl`：重建使用 PS FCLK0 的调试核并导出硬件平台。
 - `export_xsa.tcl`：从当前实现导出 XSA。
 - `inspect_*.tcl`、`list_ipdefs.tcl`、`check_ip_status.tcl`：工程结构与 IP 状态检查。
@@ -85,6 +99,37 @@ python -B sim/run_dphy_sampling_test.py ooc-synth
 
 在 Codex 中用 `require_escalated` 对该次正常 Windows 进程提出审批；以当前
 工具调用的有效权限为准。本轮未修改全局配置或 ACL。
+
+### Codex 下 Vivado/JTAG 启动固定流程
+
+2026-10-25 的板卡验证记录了三个相互独立的主机问题：Vivado 原始
+`vivado.bat` 首段会 `pushd "%~dp0"`，Codex 沙箱拒绝把 `cmd.exe` 工作目录切换到
+`D:\Xilinx`，随后才表现为 `setupEnv.bat`/`loader.bat` 找不到；普通沙箱进程访问
+本机 `hw_server` TCP socket 返回 `WinError 10013`；已有 hw_server 监听 3121 时，
+连接失败的 Vivado 又尝试自启第二个服务，产生 `Socket bind error`。这些现象是
+主机入口、权限和服务生命周期问题，不能归因于 JTAG 链或 FPGA BIT。
+
+后续 Codex 必须遵守以下固定流程：
+
+1. 不直接调用安装目录的 `vivado.bat`，也不修改 Vivado 安装文件。使用仓库内
+   [`vivado_nocd.bat`](vivado_nocd.bat)，它用绝对路径调用 `setupEnv.bat` 和
+   `loader.bat`，不执行外部 `pushd/cd`。
+2. `hw_server.exe` 和 Vivado 必须在同一个获准的提升权限上下文运行。普通沙箱
+   的 socket 连接失败时，只提升该次硬件操作，不改全局 ACL、注册表或防火墙。
+3. 3121 只允许一个 hw_server。启动前用 `netstat -ano` 或
+   `Get-NetTCPConnection -LocalPort 3121` 找到监听 PID，并确认进程路径是
+   `.../hw_server.exe`；匹配时复用它。只有确认是该路径的遗留服务且用户授权时，
+   才停止并启动一个受控实例。不要让 Vivado 在失联后自动再启动第二个服务。
+4. 连接固定使用 `localhost:3121`，并核对唯一 target
+   `localhost:3121/xilinx_tcf/Digilent/210512180081` 与器件 `xc7z020_1`。
+   首次排障先运行只读目标检查，再执行下载；最小下载只读回 DONE、EOS、CRC，
+   不初始化 PS、不下载 ELF、不写 SD。
+
+本次修复的实测证据保存在 `output/build/game_app/live_board_1/`：
+`hw_server_check.json` 证明单实例目标可见，`program_minimal_result.json` 证明
+DONE=1、EOS=1、CRC=0。之后若遇到同样报错，先检查这四项，不要换用一串等价
+Vivado 入口或重复启动 hw_server。
+
 `ooc-synth` 沿用现有功能证据及新鲜度门槛，综合后立即停止；记录输入、启动器
 哈希和完成状态到 `build/vivado_runtime/dphy_sampling/last_run.json`。
 `SYNTH_ONLY_COMPLETE` 不等于时序/CDC 合格；原 OOC 否决报告保持原状。
@@ -98,7 +143,7 @@ $taskOut = Join-Path $taskRoot 'build/vivado_runtime/dphy_sampling'
 New-Item -ItemType Directory -Path $taskOut -Force | Out-Null
 Set-Location (Split-Path $taskRoot -Parent)
 try {
-    & "$env:XILINX_VIVADO/bin/vivado.bat" -mode batch -notrace `
+    & "$taskRoot/tools/vivado_nocd.bat" -mode batch -notrace `
         -source "$taskRoot/sim/run_dphy_sampling_ooc.tcl" `
         -log "$taskOut/direct_vivado.log" -journal "$taskOut/direct_vivado.jou" `
         -tclargs --synth-only
@@ -117,8 +162,9 @@ try {
 的非工程综合入口。官方资料没有建立本机间歇性错误的确切根因；上述绕行为
 本仓库实测结论。
 
-需要先启动 `hw_server` 才能运行 JTAG 脚本。工具安装位置由 PowerShell 中的
-`XILINX_VIVADO` 和 `XILINX_VITIS` 环境变量决定；Tcl 脚本内部不包含开发机绝对路径。
+需要先按上面的单实例流程启动或复用 `hw_server`，再运行 JTAG 脚本。工具安装位置
+由 PowerShell 中的 `XILINX_VIVADO` 和 `XILINX_VITIS` 环境变量决定；Tcl 脚本内部
+不包含开发机绝对路径。
 
 ## 隔离D-PHY原始采样观测诊断
 

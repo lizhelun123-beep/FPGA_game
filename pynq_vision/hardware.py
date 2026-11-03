@@ -317,11 +317,11 @@ class CsiReceiver:
         time.sleep(0.001)
 
     def snapshot(self):
-        # Production1.2 snapshots both counters in their actual video domain.
+        # Production1.2/1.3 snapshots both counters in their actual video domain.
         # Sequence identifies a snapshot, never a camera frame or exposure.
         version = self.regs.read(0x0C)
-        if version != 0x00010002 or self.regs.read(0x14) & 1:
-            raise RuntimeError("CSI1.2 idle snapshot interface is required")
+        if version not in (0x00010002, 0x00010003) or self.regs.read(0x14) & 1:
+            raise RuntimeError("CSI1.2/1.3 idle snapshot interface is required")
         sequence = self.regs.read(0x10)
         expected = (sequence + 1) & 0xFFFFFFFF
         self.regs.write(0x10, 1)

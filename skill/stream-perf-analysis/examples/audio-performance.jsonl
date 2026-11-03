@@ -1,0 +1,4 @@
+{"connection":"audio-demo","report":1,"stage":"read_audio","n":10,"total":10000,"maximum":10000,"unit":"us"}
+{"connection":"audio-demo","report":1,"stage":"filter_audio","n":10,"total":10000,"maximum":10000,"unit":"us"}
+{"connection":"audio-demo","report":2,"stage":"read_audio","n":20,"total":40000,"maximum":10000,"unit":"us"}
+{"connection":"audio-demo","report":2,"stage":"filter_audio","n":20,"total":40000,"maximum":10000,"unit":"us"}

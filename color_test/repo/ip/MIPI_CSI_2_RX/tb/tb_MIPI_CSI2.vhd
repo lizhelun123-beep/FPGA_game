@@ -69,6 +69,7 @@ architecture Behavioral of tb_MIPI_CSI2 is
 
 		 CrcErrorCount : out std_logic_vector(31 downto 0);
 		 FrameCount : out std_logic_vector(31 downto 0);
+         FrameStartEvent, FrameEndEvent : out std_logic;
 		 FifoOverflow : out std_logic;
          
          video_aresetn        : in std_logic;
@@ -264,6 +265,7 @@ DUT: MIPI_CSI2_Rx
 
 	  CrcErrorCount => CrcErrorCount,
 	  FrameCount => FrameCount,
+      FrameStartEvent => open, FrameEndEvent => open,
 	  FifoOverflow => FifoOverflow,
       
       video_aresetn        => mRst_n,

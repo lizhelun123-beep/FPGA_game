@@ -1,5 +1,6 @@
 """Minimal AXI VDMA 6.3 MMIO driver for this fixed BGR888 pipeline."""
 
+import json
 import time
 
 import numpy as np
@@ -36,6 +37,17 @@ WRITE_REFERENCE_MASK = 0x00001F00
 CURRENT_READ_SHIFT = 16
 CURRENT_WRITE_SHIFT = 24
 CURRENT_FRAME_MASK = 0x1F
+
+
+class CaptureBoundaryFault(RuntimeError):
+    """Freeze the FIRST failing register sample, before stop/reset can alter it.
+
+    Only values already read by the ownership check belong here; constructing
+    this exception performs no MMIO and never acknowledges an error/IRQ.
+    """
+    def __init__(self, message, **sample):
+        self.snapshot = dict(sample)
+        super().__init__(message + ': ' + json.dumps(self.snapshot, sort_keys=True))
 
 
 def device_address(buffer):
@@ -196,6 +208,123 @@ class AxiVdma:
         value = self.regs.read(PARK_POINTER)
         value = (value & ~READ_REFERENCE_MASK) | index
         self.regs.write(PARK_POINTER, value)
+
+    def park_write(self, index):
+        """Keep accepting camera data into one store; grant no CPU ownership.
+
+        Start the channel in circular mode first (the vendor driver's parking
+        sequence), then change only the park reference/control. Never reset,
+        rewrite VSIZE, or enable FrameCntEn while the sensor is streaming.
+        """
+        if not 0 <= index < FRAME_COUNT or self.single_frame:
+            raise ValueError("continuous capture needs a valid park store")
+        control = self.regs.read(S2MM_CONTROL)
+        if not control & RUNSTOP or control & (RESET | FRAME_COUNT_ENABLE | 8):
+            raise CaptureBoundaryFault("capture is not running without frame-count/genlock",
+                                       operation='park_write_precondition', writer=index, control=control)
+        park = self.regs.read(PARK_POINTER)
+        self.regs.write(PARK_POINTER, (park & ~WRITE_REFERENCE_MASK) | (index << 8))
+        control = (control & ~(CIRCULAR | 0x00FF0000)) | FRAME_COUNTER_ONE | FRAME_IRQ_ENABLE
+        self.regs.write(S2MM_CONTROL, control)
+        actual_control = self.regs.read(S2MM_CONTROL)
+        if actual_control != control:
+            raise CaptureBoundaryFault("continuous capture control did not latch",
+                                       operation='park_write_control', writer=index,
+                                       requested_control=control, control=actual_control, park_before=park)
+        actual_park = self.regs.read(PARK_POINTER)
+        if actual_park & WRITE_REFERENCE_MASK != index << 8:
+            raise CaptureBoundaryFault("capture park reference did not latch",
+                                       operation='park_write_reference', writer=index,
+                                       control=actual_control, park=actual_park)
+
+    def check_parked_write(self, index):
+        if not 0 <= index < FRAME_COUNT:
+            raise ValueError("invalid capture writer")
+        control = self.regs.read(S2MM_CONTROL)
+        status = self.status(True)
+        park = self.regs.read(PARK_POINTER)
+        mask = RUNSTOP | CIRCULAR | RESET | 8 | FRAME_COUNT_ENABLE | 0x00FF0000 | FRAME_IRQ_ENABLE
+        if (control & mask != RUNSTOP | FRAME_COUNTER_ONE | FRAME_IRQ_ENABLE or
+                status & (HALTED | ERRORS) or
+                (park >> 8) & CURRENT_FRAME_MASK != index or
+                (park >> CURRENT_WRITE_SHIFT) & CURRENT_FRAME_MASK != index):
+            raise CaptureBoundaryFault("capture park ownership changed",
+                                       operation='check_parked_write', writer=index,
+                                       control=control, status=status, park=park,
+                                       error_mask=status & ERRORS)
+        return status
+
+    def wait_parked_write(self, index, events=2, timeout=2.0):
+        """Retire old stores after requested/current agree AND fresh starts.
+
+        IRQFrameCount is a START indication, not an EOF. As in the existing
+        display retirement fence, observe W1C low then two new starts on the
+        fixed writer. A complete intervening frame also lets the prior RAW10
+        packet/CRC tail drain. A latched IRQ or PARK readback alone never grants
+        a store. The returned time precedes the first observed fresh start.
+        """
+        if not 0 <= index < FRAME_COUNT or events not in (1, 2):
+            raise ValueError("invalid capture retirement fence")
+        deadline = time.monotonic() + timeout
+        phase = count = 0
+        lower = first = None
+        while True:
+            sampled = time.monotonic()
+            control = self.regs.read(S2MM_CONTROL)
+            status = self.status(True)
+            park = self.regs.read(PARK_POINTER)
+            mask = RUNSTOP | CIRCULAR | RESET | 8 | FRAME_COUNT_ENABLE | 0x00FF0000 | FRAME_IRQ_ENABLE
+            if (control & mask != RUNSTOP | FRAME_COUNTER_ONE | FRAME_IRQ_ENABLE or
+                    status & (HALTED | ERRORS) or
+                    (park >> 8) & CURRENT_FRAME_MASK != index):
+                reasons = []
+                if control & mask != RUNSTOP | FRAME_COUNTER_ONE | FRAME_IRQ_ENABLE:
+                    reasons.append('control_contract')
+                if status & HALTED:
+                    reasons.append('dma_halted')
+                if status & ERRORS:
+                    reasons.append('dma_errors')
+                if (park >> 8) & CURRENT_FRAME_MASK != index:
+                    reasons.append('park_reference')
+                raise CaptureBoundaryFault("capture failed during park retirement",
+                                           operation='wait_parked_write', writer=index,
+                                           control=control, status=status, park=park,
+                                           error_mask=status & ERRORS, reasons=reasons,
+                                           phase=phase, fresh_starts=count, required_starts=events,
+                                           sampled_before_reads_s=sampled)
+            current = (park >> CURRENT_WRITE_SHIFT) & CURRENT_FRAME_MASK
+            if current == index:
+                if phase == 0 or (phase == 1 and status & FRAME_COMPLETE):
+                    lower = sampled
+                    self.clear_frame_complete(True)
+                    phase = 1
+                elif phase == 1:
+                    phase = 2
+                elif status & FRAME_COMPLETE:
+                    count += 1
+                    if first is None:
+                        first = lower
+                    if count == events:
+                        self.check_parked_write(index)
+                        return first
+                    lower = sampled
+                    self.clear_frame_complete(True)
+                    phase = 1
+            elif phase:
+                raise CaptureBoundaryFault("capture writer moved after park acknowledgement",
+                                           operation='wait_parked_write', writer=index,
+                                           control=control, status=status, park=park,
+                                           reasons=['writer_changed_after_ack'], phase=phase,
+                                           fresh_starts=count, required_starts=events,
+                                           sampled_before_reads_s=sampled)
+            if time.monotonic() >= deadline:
+                raise CaptureBoundaryFault("capture park retirement timeout; no CPU ownership granted",
+                                           operation='wait_parked_write', writer=index,
+                                           control=control, status=status, park=park,
+                                           reasons=['timeout'], phase=phase,
+                                           fresh_starts=count, required_starts=events,
+                                           sampled_before_reads_s=sampled)
+            time.sleep(0.001)
 
     def wait_owned_frame(self, timeout=2.0):
         """Await one full hardware-halted frame; IRQ alone is a start event.

@@ -1,0 +1,23 @@
+<svg data-model-length="164" data-model-width="56" xmlns="http://www.w3.org/2000/svg" width="172" height="64" viewBox="-86 -32 172 64">
+  <title>Blue portal A, directed along positive X</title>
+  <desc>Transparent sprite centered at 0,0, pixel 86,32. Nominal OBB is 164 by 56. Solid dot marks negative X, open ring marks positive X. Both long sides are active; end caps are visually distinct.</desc>
+  <defs>
+    <linearGradient id="frame" x1="0" y1="-28" x2="0" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9BDEF7"/><stop offset="0.42" stop-color="#56BCEC"/><stop offset="1" stop-color="#358FC4"/>
+    </linearGradient>
+    <linearGradient id="field" x1="0" y1="-18" x2="0" y2="18" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DCF9F5"/><stop offset="0.5" stop-color="#95DDE9"/><stop offset="1" stop-color="#BDEFEA"/>
+    </linearGradient>
+  </defs>
+  <rect x="-82" y="-28" width="164" height="56" rx="11" fill="url(#frame)" stroke="#3D5A65" stroke-width="2.6"/>
+  <rect x="-72" y="-18" width="144" height="36" rx="7" fill="url(#field)" stroke="#3886AB" stroke-width="1.8"/>
+  <path d="M-66-23H66M-66 23H66" stroke="#D8FDFF" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M-76-14V14M76-14V14" stroke="#337EAA" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="-57" cy="0" r="9" fill="#2D8DB8" stroke="#E6FFFF" stroke-width="1.7"/>
+  <circle cx="-59" cy="-2.5" r="2.2" fill="#6BC7E3"/>
+  <circle cx="57" cy="0" r="11.2" fill="#E1F9EF" stroke="#2D8DB8" stroke-width="4"/>
+  <path d="M-28-5H14V-11L30 0 14 11V5H-28Z" fill="#F5FFEE" stroke="#62BDD3" stroke-width="1.2" stroke-linejoin="round"/>
+  <path d="M-23-11H-9M-23 11H-9" stroke="#65BFD5" stroke-width="1.2" stroke-linecap="round" opacity="0.6"/>
+  <path d="M-75-20-72-23M71-23 74-20" stroke="#EDFFFF" stroke-width="1.9" stroke-linecap="round"/>
+  <path d="M-64 26H64" stroke="#2C7EA7" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+</svg>

@@ -10,10 +10,15 @@ extern "C" {
 
 #define GAME_CONFIG_VERSION 1U
 #define GAME_SCENE_VERSION 1U
-#define GAME_MAX_LEVELS 3
+#define GAME_MAX_LEVELS 15
 #define GAME_MAX_MODELS 6
 
 typedef enum { GAME_FIXED = 0, GAME_ROTATE_ONLY, GAME_FREE } GameMotion;
+typedef enum {
+    GAME_GEOMETRY_CONFIGURED = 0,
+    GAME_GEOMETRY_PORTAL_TEMPLATE = 1,
+    GAME_GEOMETRY_MARKER_TEMPLATE = 2
+} GameGeometryMode;
 typedef enum {
     GAME_SELECT_LEVEL = 0, GAME_PREPARING, GAME_RUNNING,
     GAME_CLEARED, GAME_TIMED_OUT
@@ -28,13 +33,28 @@ typedef enum {
 typedef struct {
     SceneObject anchor;
     GameMotion motion;
+    /* Explicit camera-reference mode: 1=Portal tag template,
+     * 2=Mirror/Wall/Target marker template. The reliable detector and mapping
+     * supply final effective dimensions from the same physical template as
+     * center/axis, never from a generic color bbox. SOURCE is never eligible.
+     * Default zero keeps configured sizes, including calibrated-mm defaults. */
+    int use_template_geometry;
 } GameObjectConfig;
+
+/* Level data, never a camera observation. point is the exact first-segment
+ * origin in the same coordinate space as the effective scene. */
+typedef struct {
+    int enabled;
+    RayPoint point;
+    RayPoint direction;
+} GameEmitterConfig;
 
 typedef struct {
     unsigned int id;
     const char *reference;
     int object_count;
     GameObjectConfig objects[GAME_MAX_MODELS];
+    GameEmitterConfig emitter;
 } GameLevelConfig;
 
 /* Immutable for the lifetime of the session. Dimensions/sizes are logical
@@ -50,13 +70,19 @@ typedef struct {
     RayPoint model_sizes[RAY_OBJECT_TYPE_COUNT]; /* x=length, y=width */
     int level_count;
     GameLevelConfig levels[GAME_MAX_LEVELS];
+    /* 0=legacy paired exit; +/-1=fixed B normal, matching GameBeam policy. */
+    int portal_b_exit_side;
 } GameConfig;
 
-/* Already mapped observations; exactly one of every configured class.
+/* Already mapped observations; exactly one of every configured physical class.
+ * A level with emitter.enabled rejects observed SOURCE and creates its own
+ * solver/display SOURCE only after the physical scene has passed validation.
  * axes must be reliable; SOURCE uses source_direction + direction_valid.
  * Do not feed held/predicted objects as observations: held must be set if ANY
  * object was retained. valid includes upstream mapping/orientation validity.
- * Measured bbox sizes and source_tip are deliberately ignored.
+ * Measured bbox sizes and source_tip are deliberately ignored. Only an explicit
+ * template rule accepts observed length/width from its declared class-specific
+ * marker template, not a generic bbox. TARGET length and width must agree.
  * sequence must strictly increase within generation (no wrap); captured_ms
  * must also strictly increase, on the same monotonic timeline as now_ms.
  * Stamp generation when capture/work is dispatched, never when it completes. */
@@ -69,7 +95,9 @@ typedef struct {
 } GameSceneInput;
 
 /* One coherent model/ray/result version for a future renderer. Mirror endpoints
- * are center +/- axis*length/2. SOURCE tip is regenerated from this same model.
+ * are center +/- axis*length/2. For a logical emitter, SOURCE center/source_tip
+ * equal the configured emission point; its first ray starts there exactly.
+ * Legacy physical SOURCE tip is regenerated from the same fixed model.
  * Full solver output is retained even when render_budget_exceeded is true.
  * Serialize calls and copy this snapshot at the presentation frame boundary;
  * the core provides no threads, clocks, smoothing, devices or drawing. */
@@ -105,6 +133,11 @@ GameStatus game_session_select(GameSession *session, unsigned int level_id,
 /* Start requires a fresh complete UNSOLVED preparation scene; it never scores
  * that scene. A new post-start capture is required for a win. */
 GameStatus game_session_start(GameSession *session, uint64_t now_ms);
+/* UART deployment only: caller has matched READY2 and STARTED2 to the selected
+ * level/emitter/nonce. Board deliberately sends no preparation poses. This
+ * starts the same session timer; fresh complete post-start poses are still
+ * required for scoring. Existing scenes must remain unsolved. */
+GameStatus game_session_start_after_board_ready(GameSession *session, uint64_t now_ms);
 GameStatus game_session_submit(GameSession *session, const GameSceneInput *input,
                                uint64_t now_ms);
 /* Call even without new input. Occlusion does not pause the running timer.

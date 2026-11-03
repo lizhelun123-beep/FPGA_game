@@ -145,6 +145,47 @@ def process_stream(args, detector: GreenTargetDetector) -> int:
     return 0 if found_any else 1
 
 
+def capture_stream(args) -> int:
+    """Save camera frames without running target detection or drawing overlays."""
+    source = int(args.camera)
+    capture = cv2.VideoCapture(source)
+    if not capture.isOpened():
+        raise RuntimeError(f"cannot open camera source: {source}")
+
+    output_dir = Path(args.capture_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved = 0
+    try:
+        while args.capture_count is None or saved < args.capture_count:
+            ok, image = capture.read()
+            if not ok:
+                raise RuntimeError(f"camera read failed at frame {saved}")
+            output_path = output_dir / f"{args.capture_prefix}_{saved:06d}.png"
+            if output_path.exists() and not args.overwrite:
+                raise RuntimeError(f"output exists (use --overwrite): {output_path}")
+            write_image(output_path, image, args.overwrite)
+            saved += 1
+            print(json.dumps({
+                "frame": saved - 1,
+                "source": str(source),
+                "capture": str(output_path),
+                "width": int(image.shape[1]),
+                "height": int(image.shape[0]),
+                "detector": None,
+            }), flush=True)
+            if args.show:
+                cv2.imshow("camera capture", image)
+                if cv2.waitKey(max(1, args.capture_interval_ms)) & 0xFF in (27, ord("q"), ord("Q")):
+                    break
+            elif args.capture_interval_ms:
+                time.sleep(args.capture_interval_ms / 1000.0)
+    finally:
+        capture.release()
+        if args.show:
+            cv2.destroyAllWindows()
+    return 0 if saved else 1
+
+
 def parser() -> argparse.ArgumentParser:
     argument_parser = argparse.ArgumentParser(
         description="Detect the pure-green circular target"
@@ -167,11 +208,40 @@ def parser() -> argparse.ArgumentParser:
     argument_parser.add_argument(
         "--max-frames", type=int, help="limit video/camera frames"
     )
+    argument_parser.add_argument(
+        "--capture-dir",
+        help="capture-only mode: save original BGR camera frames here; no target detection",
+    )
+    argument_parser.add_argument(
+        "--capture-count", type=int, help="number of still frames to save in capture-only mode"
+    )
+    argument_parser.add_argument(
+        "--capture-interval-ms", type=int, default=0,
+        help="delay between capture-only frames (milliseconds)",
+    )
+    argument_parser.add_argument(
+        "--capture-prefix", default="frame", help="capture-only filename prefix"
+    )
     return argument_parser
 
 
 def main() -> int:
     args = parser().parse_args()
+    if args.capture_dir:
+        if args.camera is None or args.image or args.video:
+            print("error: --capture-dir requires --camera and cannot be combined with --image/--video", file=sys.stderr)
+            return 2
+        if args.capture_count is not None and args.capture_count <= 0:
+            print("error: --capture-count must be positive", file=sys.stderr)
+            return 2
+        if args.capture_interval_ms < 0:
+            print("error: --capture-interval-ms must be non-negative", file=sys.stderr)
+            return 2
+        try:
+            return capture_stream(args)
+        except (OSError, RuntimeError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
     if args.mask_output and not args.image:
         print("error: --mask-output is available only with --image", file=sys.stderr)
         return 2

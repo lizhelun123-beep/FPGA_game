@@ -854,8 +854,42 @@ static void continuous_checks(void)
     CHECK(game_display_update(&display,&source,20)==GAME_DISPLAY_TIMEOUT);
     CHECK(display.state==GAME_DISPLAY_RETAINED && !f.releases && f.data[2*frame]==0x54);
     CHECK(game_display_update(&display,&source,20)==GAME_DISPLAY_BAD_STATE);
+    /* Recovery never stops/reconfigures scanout. It proves RUN/no-errors and
+     * restarts the two-new-START retirement observation before store reuse. */
+    f.stall_events=0;
+    CHECK(game_display_resume_scanout(&display)==GAME_DISPLAY_OK);
+    CHECK(display.state==GAME_DISPLAY_SCANNING && display.update_pending);
+    for (i=0;i<200 && display.update_pending;++i) {
+        GameDisplayStatus status=game_display_poll(&display);
+        CHECK(status==GAME_DISPLAY_OK || status==GAME_DISPLAY_BUSY);
+        if (status==GAME_DISPLAY_BUSY) CHECK(wait_ms(&f,1)==0);
+    }
+    CHECK(!display.update_pending && display.state==GAME_DISPLAY_SCANNING);
+    CHECK(game_display_update(&display,&source,100)==GAME_DISPLAY_OK);
+    configs=finishes=0;
+    for (i=0;i<f.events;++i) { if (f.event[i]==CONFIGURE) ++configs;if (f.event[i]==FINISH || f.event[i]==OUTPUT_OFF) ++finishes; }
+    CHECK(configs==1 && finishes==0 && !f.releases && f.reg[0]==0x10001);
     CHECK(game_display_stop(&display,100)==GAME_DISPLAY_OK && f.releases==1 && game_display_owner_can_exit(&display));
-    printf("PASS continuous safety: %u checks;three stores,ordered handoff,no timing restart,timeout retains;fake only\n",checks);
+    printf("PASS continuous safety: %u checks;three stores,ordered handoff,timeout resumes without timing restart;fake only\n",checks);
+}
+static void live_session_contract(void)
+{
+    GameLinuxLiveSession session={0};
+    GameDisplayPlatform platform={0};
+    CHECK(game_linux_live_session_can_exit(&session));
+#if defined(__linux__) && defined(__arm__)
+    /* The ARM path is admitted only by the protected live qualifier. */
+    CHECK(game_linux_live_session_open(&session)!=GAME_DISPLAY_OK || session.impl!=NULL);
+    if (session.impl) {
+        CHECK(game_linux_live_session_platform(&session,GAME_LINUX_LIVE_DISPLAY,&platform)==GAME_DISPLAY_OK);
+        CHECK(game_linux_live_session_close(&session)!=GAME_DISPLAY_OK || game_linux_live_session_can_exit(&session));
+    }
+#else
+    CHECK(game_linux_live_session_open(&session)==GAME_DISPLAY_UNQUALIFIED);
+    CHECK(game_linux_live_session_platform(&session,GAME_LINUX_LIVE_DISPLAY,&platform)==GAME_DISPLAY_UNQUALIFIED);
+#endif
+    CHECK(game_linux_live_session_can_exit(&session));
+    printf("PASS live session ABI contract: shared lease API guarded; host device access=0\n");
 }
 int main(int argc,char **argv)
 {
@@ -874,7 +908,7 @@ int main(int argc,char **argv)
     if (argc!=1) {
         fputs("usage: test_game_linux_display [--assets DIR --output DIR]\n",stderr); return 2;
     }
-    modes(); pixels_and_order(); failures(); lifecycle(); stopped_update_checks(); snapshot();
+    modes(); pixels_and_order(); failures(); lifecycle(); stopped_update_checks(); snapshot(); live_session_contract();
     printf("PASS Linux display fake platform: %u checks; no hardware/panel qualification\n",checks);
     return 0;
 }

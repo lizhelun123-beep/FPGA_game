@@ -1,5 +1,15 @@
 # PC 颜色与 marker 视觉原型
 
+2026-10-30当前电脑优化：共享运行层 `20261030-pc-responsive-7`，网页 `20261030-web-responsive-6`。用户允许放宽门槛后，唯一JSON的场景/计分准入为600ms（原350ms）；校时250ms、板端B350ms不变。按本关必需类别适配真实观测，额外无关物块不再阻塞提交，缺失/重复/无效/旧会话继续拒绝。重启电脑后台并刷新网页生效，现用version14 BOOT保持不变。下文旧版本号及350ms描述是历史记录。
+
+当前正式串口协议已升级为**v3二进制**，电脑build=`20261028-binary-v3-350-6`，须与version14 BOOT成对更新。BOOT：`color_test/build/beam_standalone/restored_binary_v3_1/output/BOOT.BIN`；配套上位机包：`output/build/game_app/web_sync350_1/web_upper_sync350.zip`。两端均不再使用v2 ASCII数据流，字段见[串口协议](SERIAL_PROTOCOL.md)，Godot启动见[当前入口](godot/README.md)。网页入口`pc_vision(1)/pc_vision/start_game.ps1`直接复用同一新串口运行层。原始帧时序、350ms计分准入、PortalB对齐和运行中整帧保留继续生效。以下旧入口/版本说明保留作历史。
+
+电脑串口游戏最新为`20261028-portal-b-aligned-4`：开始计时后保留上一份完整实测场景，新场景就绪时整帧替换；遮挡/漏检/等待更新不先清空，模型保持亮度。切关/菜单清理，旧场景保持原始时间与序号且不参与通关。新姿态立即唤醒呈现，周期处理最长10ms；现有version13 BOOT继续使用，重启Python桥接与Godot应用本次更新。更新包见[Godot说明](godot/README.md)。
+
+当前恢复版的正式串口/Godot入口为 `python -m pc_vision.godot_bridge --serial COM9 --godot .\output\tools\godot\Godot_v4.7.2-stable_win64_console.exe`，需板端新POSE2固件；本机USB-UART已核对为COM9，其他电脑先用 `python -m pc_vision.godot_bridge --list-ports` 枚举再明确指定端口，关闭XCOM等串口助手的连接。15格选关全部显示内容并可选择，前三关使用旧布局与固定逻辑光源，后12关为已保存的随机布局，不保证可解。只读主机检查为 `python -m pc_vision.godot_bridge --check`。完整说明见[Godot上位机](godot/README.md)。电脑消费板端已确认的旧彩色物块姿态，不在PC重做AprilTag识别或再次平滑；下文scene-v1/GameView为旧调试入口，不能用于新POSE2固件。
+
+实时关卡会话按 `LEVEL2 → READY2 → START2 → STARTED2 → POSE2` 推进，`SYNC2`独立周期校时，关卡命令优先。选关时上位机发送本关光源点、方向、代次和随机数；板端新光源画面通过显示栅栏后返回 `READY2`，电脑才启用“开始计时”，收到 `STARTED2` 后才启动计时并接收姿态。控制行和回应均带 CRC32，旧代次、旧随机数或未获许可的姿态会被丢弃。超时从完整实际发送完成起计算，2秒重试、最多3次。当前配套version13整合版：`color_test/build/beam_standalone/restored_integrated_1/output/BOOT.BIN`，包含version12 Portal修正和完整握手；旧version10不支持此握手。板卡启动后可运行 `& .\pc_vision\start_game.ps1 -SerialPort COM9`，自动记录真实TX/RX至`pc_vision/output/serial/`。
+
 独立于 `color_test/` 的 Python + OpenCV 原型。支持图片、USB 摄像头、视频文件。识别 MIRROR、PORTAL_A、PORTAL_B、TARGET、SOURCE、WALL；无神经网络、YOLO、OCR、ArUco 或多边形顶点数分类。
 
 ## 板载定位＋电脑实时游戏
@@ -46,13 +56,36 @@ total/maximum、连接编号及电脑单调接收时刻。stat 单位为微秒�
 live_monitor01 前 78 条约 1.09 Hz，当前 466 条快照约 1.23 Hz；尚不能解释具体阶段。
 电脑不再频闪不代表板端达成 8～10 Hz 或约 200 ms 响应。
 
-界面底部显示 **LIVE / STALE / DISCONNECTED、Hz RX、场景帧号、RX age**。
+界面显示 **LIVE / STALE / DISCONNECTED、Hz RX、场景帧号、valid age**。
 Hz RX 按最近十秒实际接收的完整场景计算（最多 128 个时间戳），和绘制 FPS 分开；
-STALE 不会强制把已测得的低速接收率置零，断线置零。RX age 是距完整包
-接收的电脑单调时钟时间，**不等于曝光到屏幕的端到端延迟**。无效场景显示 STALE
-并立即清空；有效场景超过 0.25 s 无更新时显示 STALE，保留上一份完整场景及光线。
-默认 6 s 无更新才超时清空，
-可用 `--scene-timeout` 或 `game_config.json` 的 `timeout_seconds` 修改。
+STALE 不会强制把已测得的低速接收率置零，断线置零。valid age 从电脑实际接收并
+采用的最后有效场景计时，**不等于曝光到屏幕的端到端延迟**。无效场景/几何立即
+显示 STALE 并清空，不能更新有效年龄；重复、乱序包及性能诊断也不能续期。
+暂停/锁定不更新冻结模型的时间戳，动态画面另显示 view age。
+
+三个时间参数独立配置于唯一的 `game_config.json`：
+
+| 参数 | 默认值 | 作用 |
+| --- | --- | --- |
+| `dropout_seconds` | 0.25 s | 新场景明确漏掉的非 SOURCE 物体，从最后观测起短时保留 |
+| `stale_seconds` | 0.25 s | 无有效更新时标记 STALE，不因超过此值清空整帧 |
+| `timeout_seconds` | 6 s | 从最后有效观测起，整帧硬超时清空模型和光路 |
+
+例如包间隔 812 ms 时，前 250 ms 为 LIVE，后续保持原位置/方向并标记 STALE，
+下一有效场景到达后恢复；不会每包清屏再出现。STALE 模型、镜面和光路变暗，
+显示 `STALE / LAST OBSERVATION`，不显示 TARGET REACHED，也不能锁定。
+6 s 沿用现有有限显示保持上限：覆盖本次实测最大间隔 1.828 s，以及此前记录的
+5.313 s 间隔；没有提高实际采集/识别更新率。照片、视频和回放的已有默认时间
+不变；该 PC 显示保持不改变 Linux/C 游戏的新鲜度或通关契约。
+
+可用命令行覆盖场景陈旧与硬超时，物体短漏检仍由上述唯一配置控制：
+
+```powershell
+python pc_vision/app.py --game --serial COM9 --baud 115200 --stale-after 0.25 --scene-timeout 6
+```
+
+`--stale-after` 仅用于 `--game`；参数必须有限，场景硬超时须大于陈旧和物体漏检
+阈值。需要记录时加 `--output pc_vision/output/live_take02`，输出目录必须不存在。
 SOURCE 缺失/方向无效立即清除跟随光线；
 其他物体短漏检最多保留 0.25 s 并变暗。暂停/锁定会明确冻结显示，现场跟随验收
 应保持 RUNNING、解除锁定。断线或超时不会让旧场景以 LIVE 标识继续运行。
@@ -66,16 +99,22 @@ scene-v1 的有效数量零表示本帧确实空场景；valid=0 表示识别/�
 协议没有唯一 boot ID，无法从字节本身严格区分任意跨重启重放；本实现依赖 UART
 有序传输、重连清缓冲和启动通知。异常时可人工关闭并重新运行上述指定端口命令。
 
-离线验证：`python -m unittest pc_vision.test_game -v`，26 项通过，覆盖 C 编码/
+离线验证：`python -m unittest pc_vision.test_game -v`，34 项通过，覆盖 C 编码/
 Python 解码、非阻塞有界发送、损坏重同步、旧包/重启/重连/超时、连续移动旋转及
 光路、SOURCE 消失、10,000 包最新值、照片/视频/回放和原图片入口；新增单一假串口的
 半行诊断保存与 scene 同时接收检查，以及低速输入保持画面、明确丢失/无效/断线清除、
-低速 Hz 与 STALE 分离。`perf_20261015_230249` 的前 293 条记录约 0.643 Hz，
+低速 Hz 与 STALE 分离。本轮增加三个计时独立性、无效/不可映射帧不续期、旧包
+拒绝、恢复/超时、SOURCE 方向无效、冻结显示年龄、STALE 变暗与不显示通关提示，
+并对 `live_monitor01/scenes.jsonl` 前 78 条做确定性 20 ms 步进回放。其 77 个间隔
+全部超过 250 ms，旧规则每次都清屏；当前保持观测到的模型/光路且标记 STALE，
+仅到硬超时才整帧清空。现场日志只读，没有生成新报告或操作硬件。
+
+历史验证：`perf_20261015_230249` 的前 293 条记录约 0.643 Hz，
 间隔中位数 1.50 s、最长 5.313 s；旧 0.25 s 清空规则预计使画面约 82.7% 时间无模型。
 保存记录经同一 C 光路离线回放，22,209 次模型和 18,762 次光线检查均未因接收间隔
 消失，50 次明确 SOURCE 缺失/方向无效仍清除光线。结果保存在该输出目录的
-`flicker_analysis.json`，截图 `flicker_stale_replay.png` 明确标为离线回放；当前运行的
-Python 进程需正常退出后重新启动才加载修复，尚未进行重启后的实时验收。未修复或运行
+`flicker_analysis.json`，截图 `flicker_stale_replay.png` 明确标为旧版离线回放；已有
+Python 进程需由人工正常退出后重新启动才加载修复，本轮未重启或实时验收。未修复或运行
 旧六类合成已知失败。板端产物与人工 SD 步骤见
 [`vision_ps_baremetal/README.md`](../color_test/software/vision_ps_baremetal/README.md)。
 **本轮未操作板卡；真实摄像头跟随、8～10 Hz 更新、约 200 ms 响应和现场稳定性均待实测验收。**
@@ -186,7 +225,8 @@ C ray 单位，求交 epsilon=0.01 平面单位，SOURCE 出射偏移=0.03 平�
 同类最近邻最大匹配距离=60 平面单位；MIRROR/WALL 消除轴的正负歧义，SOURCE 和
 Portal 保留真实有向转动。非 SOURCE 短漏检最多保留 0.25 s，从物体最后实际看到
 时间计时，以 `held` 暗色显示且不可锁定；SOURCE 漏检立即清除发射光线。持续无更新
-0.25 s 后标为 STALE 并显示上一份完整场景，默认 6 s 后超时清空（可用
+默认 0.25 s 后标为 STALE 并变暗显示上一份完整场景（独立 `stale_seconds` /
+`--stale-after`），默认 6 s 后超时清空（可用
 `--scene-timeout` 配置）。等待下一帧不会当成漏检；无效完整帧
 立即清除跟随场景；锁定和暂停只冻结显示，后台最新场景继续更新和过期。解除锁定
 不会恢复超时的旧物体。视频 EOF 继续响应窗口并执行过期处理。

@@ -1,0 +1,13 @@
+{
+  "name": "ray-game-3d-preview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "python ../web_bridge.py --preview",
+    "check": "node --check main.js && node --check portals.js && node --check presentation.js",
+    "test": "node --test presentation.test.js"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  }
+}

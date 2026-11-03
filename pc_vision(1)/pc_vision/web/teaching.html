@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>实景教学 · 物块与光路</title>
+<style>
+body{margin:0;padding:24px;background:#18252b;color:#e8edf0;font:16px system-ui,sans-serif}main{max-width:1280px;margin:auto}h1{font-size:25px}p{line-height:1.7;color:#b5c7cc}canvas{width:100%;background:#213840;border:1px solid #42606a;border-radius:12px}a,button{display:inline-block;background:#305360;color:#fff;padding:10px 16px;margin:6px;border-radius:8px;border:0;text-decoration:none}pre{white-space:pre-wrap;background:#102028;padding:16px;border-radius:8px;max-height:300px;overflow:auto}.state{color:#ffd263}#downloads[hidden]{display:none}
+</style>
+<main><h1>实景教学预览</h1><p>在板端 HDMI 画面上依次完成：确认红色轮廓 → 确认绿色特征 → 绘制黄色光线。轮廓未闭合时不能进入下一阶段。板端只显示当前阶段标记；电脑在此累计预览已确认的结果。显示单位为相机像素，教学模板不参与关卡计时或通关。</p>
+<p id="state" class="state" role="status">等待板端教学数据…</p>
+<canvas id="view" width="1280" height="720" aria-label="虚拟物块轮廓及教学光线"></canvas>
+<div id="downloads" hidden><a href="/api/teaching/export/teaching.json">下载特征与案例</a><a id="object-code" href="/api/teaching/export/object_template.py">物块模板代码</a><a href="/api/teaching/export/ray_rule.py">光路 Python 草案</a><a href="/api/teaching/export/ray_rule.c">光路 C 草案</a></div>
+<p>红线：物块外轮廓；绿线：物块特征；黄色箭头：光线教学示例。轮廓与特征分层记录，特征不参与外边界拟合。物块主要颜色来自原始相机图像，纹理和材质没有重建。移动物块后请在板端 NEW 重新录入。导出代码需要审核和构建才能接入正式程序。</p>
+<pre id="details">尚无完整快照</pre></main>
+<script>
+const canvas=document.querySelector('#view'),ctx=canvas.getContext('2d');let lastKey='';
+function world(p,m){return [m.center[0]+p[0]*m.axis[0]-p[1]*m.axis[1],m.center[1]+p[0]*m.axis[1]+p[1]*m.axis[0]]}
+function line(points,color,width=3){if(!points.length)return;ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
+function arrow(a,b){line([a,b],'#ffe064',3);const angle=Math.atan2(b[1]-a[1],b[0]-a[0]);line([[b[0]-12*Math.cos(angle-.4),b[1]-12*Math.sin(angle-.4)],b,[b[0]-12*Math.cos(angle+.4),b[1]-12*Math.sin(angle+.4)]],'#ffe064',3)}
+function feedback(d){const gap=/OUTLINE OPEN GAP (\d+) PX/.exec(d.status||'');if(gap)return `轮廓未闭合，缺口约 ${gap[1]} 像素，请补画后确认`;if((d.status||'').includes('OUTLINE HAS GAPS'))return '轮廓有断口，请补画后确认';if((d.status||'').includes('OUTLINE OPEN'))return '轮廓尚未完成，请继续绘制';return d.status||''}
+function render(d){ctx.clearRect(0,0,1280,720);ctx.strokeStyle='#34515b';ctx.lineWidth=1;for(let x=0;x<1280;x+=80){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,720);ctx.stroke()}for(let y=0;y<720;y+=80){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(1280,y);ctx.stroke()}
+ const m=d.model;if(!m)return;const outline=m.outline_local.map(p=>world(p,m));ctx.beginPath();ctx.moveTo(...outline[0]);for(const p of outline.slice(1))ctx.lineTo(...p);ctx.closePath();ctx.fillStyle=`rgb(${m.color_bgr.slice().reverse().join(',')})`;ctx.fill();ctx.strokeStyle='#ee6868';ctx.lineWidth=3;ctx.stroke();
+ for(const mark of m.markers_local||[])line(mark.map(p=>world(p,m)),'#58eb82',2);
+ for(const c of d.cases){arrow(world(c.start,m),world(c.entry,m));arrow(world(c.exit,m),world(c.end,m))}
+}
+async function poll(){try{const response=await fetch('/api/teaching',{cache:'no-store'});if(!response.ok)throw Error('后台响应异常');const s=await response.json(),d=s.document;
+document.querySelector('#state').textContent=(!s.connected?'串口未连接 · ':'')+(d?`版本 ${d.revision} · 阶段 ${{OUTLINE:'轮廓录入',FEATURE:'特征录入',RAYS:'光线录入'}[d.annotation_stage]||'历史数据'} · ${d.cases.length} 组示例 · ${d.rule.accepted?'候选规律 '+d.rule.kind:'规律未知／样本不足'} · ${feedback(d)}`:'等待板端教学数据…');
+document.querySelector('#downloads').hidden=!d;document.querySelector('#object-code').hidden=!d?.model;
+if(d){const key=d.session+':'+d.revision;if(key!==lastKey){render(d);document.querySelector('#details').textContent=JSON.stringify({model:d.model,rule:d.rule,reference:d.reference},null,2);lastKey=key}}
+}catch(e){document.querySelector('#state').textContent='无法连接上位机后台：'+e.message}finally{setTimeout(poll,500)}}poll();
+</script></html>

@@ -76,6 +76,74 @@ void vision_portal_diagnostics_set_type(int type)
 
 #define PI_F 3.14159265358979323846f
 
+static int real_scene_profile;
+static VisionPortalDetector real_scene_portal_detector;
+static VisionRealSceneGeometry real_scene_geometry_ratios;
+static int real_scene_geometry_configured;
+static uint32_t hsv_reciprocal[256];
+static int hsv_reciprocal_ready;
+static VisionDetectionDiagnostics detection_diagnostics;
+
+void vision_get_detection_diagnostics(VisionDetectionDiagnostics *diagnostics)
+{
+    if (diagnostics) *diagnostics = detection_diagnostics;
+}
+
+void vision_detection_diagnostics_note_target(int geometry_pass)
+{
+    detection_diagnostics.component_candidates[VISION_TARGET]++;
+    if (geometry_pass) {
+        detection_diagnostics.geometry_pass[VISION_TARGET]++;
+        /* TARGET has no separate endpoint marker stage; its circular-shape
+         * gate is the final marker/shape acceptance stage for this report. */
+        detection_diagnostics.marker_pass[VISION_TARGET]++;
+    } else detection_diagnostics.rejected_geometry[VISION_TARGET]++;
+}
+
+void vision_set_portal_detector(VisionPortalDetector detector)
+{
+    real_scene_portal_detector = detector;
+}
+
+int vision_set_real_scene_geometry(const VisionRealSceneGeometry *geometry)
+{
+    if (!geometry ||
+        !isfinite(geometry->mirror_reflective_to_marker_span) ||
+        !isfinite(geometry->mirror_body_to_marker_span) ||
+        !isfinite(geometry->mirror_body_width_to_marker_span) ||
+        !isfinite(geometry->wall_body_to_marker_span) ||
+        !isfinite(geometry->wall_body_width_to_bar_span) ||
+        geometry->mirror_reflective_to_marker_span <= 0.0f ||
+        geometry->mirror_body_to_marker_span <= 0.0f ||
+        geometry->mirror_body_width_to_marker_span <= 0.0f ||
+        geometry->wall_body_to_marker_span <= 0.0f ||
+        geometry->wall_body_width_to_bar_span <= 0.0f ||
+        geometry->mirror_reflective_to_marker_span > geometry->mirror_body_to_marker_span)
+        return -1;
+    real_scene_geometry_ratios = *geometry;
+    real_scene_geometry_configured = 1;
+    return 0;
+}
+
+int vision_set_real_scene_profile(int enabled)
+{
+    if (enabled < VISION_PROFILE_LEGACY || enabled > VISION_PROFILE_RESTORED) return -1;
+    if (enabled == VISION_PROFILE_TAGS && !real_scene_portal_detector) return -3;
+    if (enabled == VISION_PROFILE_TAGS && !real_scene_geometry_configured) return -4;
+    if (enabled == VISION_PROFILE_RESTORED && !hsv_reciprocal_ready) {
+        unsigned d;
+        /* Prepare before capture, once. For n<=65535,d<=255 the upward
+         * rounded24-bit reciprocal gives EXACT floor(n/d): its error is
+         * <65536/2^24=1/256, smaller than the minimum fractional step1/d.
+         * Cortex-A9 otherwise calls software integer division for every HSV
+         * saturation/hue pixel. Keep identical rounding and all thresholds. */
+        for (d=1; d<256; ++d) hsv_reciprocal[d]=(16777216U+d-1U)/d;
+        hsv_reciprocal_ready=1;
+    }
+    real_scene_profile = enabled;
+    return 0;
+}
+
 typedef struct {
     uint32_t count;
     uint32_t min_x;
@@ -215,6 +283,12 @@ typedef struct {
 } PortalMarkerLayout;
 
 typedef struct {
+    float cx,cy,axis_x,axis_y;
+    uint8_t fallback;
+    int valid;
+} PortalMarkerPose;
+
+typedef struct {
     Shape shape;
     uint32_t count;
 } WallMarker;
@@ -258,6 +332,13 @@ static int in_range(int value, int low, int high)
 
 static int divide_round_nearest(int numerator, int denominator)
 {
+    if (real_scene_profile==VISION_PROFILE_RESTORED && denominator>0 && denominator<256) {
+        unsigned n=(unsigned)(numerator<0 ? -numerator : numerator)+(unsigned)denominator/2U;
+        if (n<=65535U) {
+            int result=(int)(((uint64_t)n*hsv_reciprocal[denominator])>>24);
+            return numerator<0 ? -result : result;
+        }
+    }
     if (numerator >= 0) return (numerator + denominator / 2) / denominator;
     return -((-numerator + denominator / 2) / denominator);
 }
@@ -297,6 +378,21 @@ void vision_bgr_to_hsv_pixel(uint8_t b, uint8_t g, uint8_t r,
 uint8_t vision_classify_hsv_pixel(uint8_t h, uint8_t s, uint8_t v)
 {
     uint8_t mask = 0;
+    if (real_scene_profile == VISION_PROFILE_RESTORED) {
+        if (in_range(h, VISION_RESTORED_YELLOW_H_MIN, VISION_RESTORED_YELLOW_H_MAX) &&
+            s >= VISION_RESTORED_YELLOW_S_MIN && v >= VISION_RESTORED_YELLOW_V_MIN) mask |= BIT_YELLOW;
+        if (in_range(h, VISION_RESTORED_BLUE_H_MIN, VISION_RESTORED_BLUE_H_MAX) &&
+            s >= VISION_RESTORED_BLUE_S_MIN && v >= VISION_RESTORED_BLUE_V_MIN) mask |= BIT_BLUE;
+        if (in_range(h, VISION_RESTORED_ORANGE_H_MIN, VISION_RESTORED_ORANGE_H_MAX) &&
+            s >= VISION_RESTORED_ORANGE_S_MIN && v >= VISION_RESTORED_ORANGE_V_MIN) mask |= BIT_ORANGE;
+        if (in_range(h, VISION_RESTORED_GREEN_H_MIN, VISION_RESTORED_GREEN_H_MAX) &&
+            s >= VISION_RESTORED_GREEN_S_MIN && v >= VISION_RESTORED_GREEN_V_MIN) mask |= BIT_GREEN;
+        if (v <= VISION_BLACK_V_MAX) mask |= BIT_BLACK;
+        /* Hue is undefined near white; it must not reject a cool white dot. */
+        if (s <= VISION_RESTORED_WHITE_S_MAX && v >= VISION_RESTORED_WHITE_V_MIN) mask |= BIT_WHITE;
+        if (v <= VISION_WALL_V_MAX) mask |= BIT_WALL;
+        return mask;
+    }
     if (in_range(h, VISION_YELLOW_H_MIN, VISION_YELLOW_H_MAX) &&
         s >= VISION_YELLOW_S_MIN && v >= VISION_YELLOW_V_MIN) mask |= BIT_YELLOW;
     if ((in_range(h, VISION_BLUE_H_MIN, VISION_BLUE_H_MAX) &&
@@ -568,6 +664,16 @@ static void create_masks(const uint8_t *frame, uint32_t stride,
             uint8_t s;
             uint8_t v;
             uint32_t index = y * grid_w + x;
+            if (real_scene_profile == VISION_PROFILE_RESTORED) {
+                unsigned xx, yy, sb=0, sg=0, sr=0;
+                for (yy=0; yy<VISION_SAMPLE_STEP; ++yy) {
+                    const uint8_t *row=frame+(y*VISION_SAMPLE_STEP+yy)*stride+x*VISION_SAMPLE_STEP*3U;
+                    for (xx=0; xx<VISION_SAMPLE_STEP; ++xx) {
+                        sb+=row[3U*xx]; sg+=row[3U*xx+1U]; sr+=row[3U*xx+2U];
+                    }
+                }
+                b=(uint8_t)(sb/16U); g=(uint8_t)(sg/16U); r=(uint8_t)(sr/16U);
+            }
             vision_bgr_to_hsv_pixel(b, g, r, &h, &s, &v);
             pixel_masks[index] = vision_classify_hsv_pixel(h, s, v);
             raw_marker_masks[index] = pixel_masks[index] & (BIT_BLACK | BIT_WHITE);
@@ -585,9 +691,19 @@ static void create_masks(const uint8_t *frame, uint32_t stride,
     /* Body masks benefit from denoising, but a sampled Portal ring may only be
      * one cell thick and must not be destroyed by the erosion stage. */
     morphology_open_close(pixel_masks, morphology_scratch, grid_w, grid_h);
-    for (y = 0; y < grid_h * grid_w; ++y)
+    for (y = 0; y < grid_h * grid_w; ++y) {
         pixel_masks[y] = (pixel_masks[y] & (uint8_t)~(BIT_BLACK | BIT_WHITE)) |
                          raw_marker_masks[y];
+        uint8_t bits = pixel_masks[y];
+        if (bits & BIT_YELLOW) detection_diagnostics.mask_pixels[0]++;
+        if (bits & BIT_BLUE) detection_diagnostics.mask_pixels[1]++;
+        if (bits & BIT_ORANGE) detection_diagnostics.mask_pixels[2]++;
+        if (bits & BIT_GREEN) detection_diagnostics.mask_pixels[3]++;
+        if (bits & BIT_MAGENTA) detection_diagnostics.mask_pixels[4]++;
+        if (bits & BIT_BLACK) detection_diagnostics.mask_pixels[5]++;
+        if (bits & BIT_WHITE) detection_diagnostics.mask_pixels[6]++;
+        if (bits & BIT_WALL) detection_diagnostics.mask_pixels[7]++;
+    }
 }
 
 static void component_reset(Component *component, uint32_t x, uint32_t y)
@@ -885,12 +1001,325 @@ static int portal_ring_component_ok(const PortalMarkerComponent *component)
            component->center_body >= 0.20f;
 }
 
-static int verify_portal_marker_layout(
+static uint8_t portal_marker_bits(uint8_t h,uint8_t s,uint8_t v,uint8_t white_s_max)
+{
+    uint8_t bits=vision_classify_hsv_pixel(h,s,v);
+    if (real_scene_profile==VISION_PROFILE_RESTORED) {
+        /* This bounded Portal ROI already measures a body-relative V floor.
+         * A second global V>=150 gate fragments dim white rings even though
+         * they contrast clearly with the colored body. A bounded warm cast is
+         * allowed here; component/center checks apply layout.white_v_min.
+         * Full-frame masks, WALL and every legacy profile stay unchanged. */
+        bits=(uint8_t)(bits & (uint8_t)~BIT_WHITE);
+        if (s<=white_s_max) bits|=BIT_WHITE;
+    }
+    return bits;
+}
+
+typedef struct {
+    MarkerSample sample;
+    float cx;
+    float cy;
+    float score;
+    float radius;
+    int side;
+    int valid;
+} PortalRadialRingCandidate;
+
+/* Reuse MarkerSample's inner disk, annulus and four-sector accounting, but
+ * classify "white" relative to this blue/orange carrier. This stays inside the
+ * existing Portal detector; it is not a second full-frame detector. */
+static void sample_portal_radial_ring(const uint8_t *frame, uint32_t width,
+                                 uint32_t height, uint32_t stride,
+                                 float cx, float cy, float radius,
+                                 uint8_t body_bit, uint8_t white_v_min,
+                                 MarkerSample *sample)
+{
+    int x0=(int)floorf(cx-radius);
+    int x1=(int)ceilf(cx+radius);
+    int y0=(int)floorf(cy-radius);
+    int y1=(int)ceilf(cy+radius);
+    float inner_sq=radius*radius*0.16f;
+    float outer_sq=radius*radius;
+    int y;
+    memset(sample,0,sizeof(*sample));
+    for (y=y0;y<=y1;++y) {
+        int x;
+        if (y<0 || y>=(int)height) continue;
+        for (x=x0;x<=x1;++x) {
+            float dx,dy,distance_sq;
+            const uint8_t *pixel;
+            uint8_t h,s,v,bits;
+            int white;
+            if (x<0 || x>=(int)width) continue;
+            dx=(float)x-cx; dy=(float)y-cy;
+            distance_sq=dx*dx+dy*dy;
+            if (distance_sq>outer_sq) continue;
+            pixel=frame+(uint32_t)y*stride+(uint32_t)x*3U;
+            vision_bgr_to_hsv_pixel(pixel[0],pixel[1],pixel[2],&h,&s,&v);
+            bits=portal_marker_bits(h,s,v,
+                VISION_RESTORED_PORTAL_RING_WHITE_S_MAX);
+            white=v>=white_v_min && (bits&BIT_WHITE);
+            if (distance_sq<=inner_sq) {
+                sample->inner_total++;
+                sample->inner_v_sum+=v;
+                if (white) sample->white_inner++;
+                if (bits&body_bit) sample->body_inner++;
+            } else if (distance_sq>=outer_sq*0.36f) {
+                unsigned int sector;
+                int outward=dx>=0.0f;
+                if (dy<0.0f) sector=dx>=0.0f ? 0U : 1U;
+                else sector=dx<0.0f ? 2U : 3U;
+                sample->annulus_total++;
+                sample->annulus_sector_total[sector]++;
+                if (outward) sample->annulus_outward_total++;
+                else sample->annulus_inward_total++;
+                sample->annulus_v_sum+=v;
+                if (white) {
+                    sample->white_annulus++;
+                    sample->white_annulus_sector[sector]++;
+                    if (outward) sample->white_annulus_outward++;
+                    else sample->white_annulus_inward++;
+                }
+            }
+        }
+    }
+}
+
+static int portal_radial_ring_score(VisionType type,const MarkerSample *sample,float *score)
+{
+    float inner_white=fraction(sample->white_inner,sample->inner_total);
+    float inner_body=fraction(sample->body_inner,sample->inner_total);
+    float annulus_white=fraction(sample->white_annulus,sample->annulus_total);
+    float outward_white=fraction(sample->white_annulus_outward,
+                                 sample->annulus_outward_total);
+    float inward_white=fraction(sample->white_annulus_inward,
+                                sample->annulus_inward_total);
+    unsigned int sector_count=0U;
+    unsigned int sector;
+    if (!sample->inner_total || !sample->annulus_total) return 0;
+    for (sector=0U;sector<4U;++sector) {
+        if (fraction(sample->white_annulus_sector[sector],
+                     sample->annulus_sector_total[sector]) >=
+            (type==VISION_PORTAL_A ? VISION_RESTORED_PORTAL_A_RING_SECTOR_MIN :
+             VISION_RESTORED_PORTAL_RING_SECTOR_MIN))
+            sector_count++;
+    }
+    if (inner_body<VISION_RESTORED_PORTAL_RING_CENTER_BODY_MIN ||
+        inner_white>VISION_RESTORED_PORTAL_RING_INNER_WHITE_MAX ||
+        annulus_white<(type==VISION_PORTAL_A ? VISION_RESTORED_PORTAL_A_RING_WHITE_MIN : VISION_WHITE_RING_MIN) ||
+        annulus_white-inner_white<VISION_RING_ANNULUS_MARGIN ||
+        outward_white<VISION_RESTORED_PORTAL_RING_DIRECTION_MIN ||
+        inward_white<VISION_RESTORED_PORTAL_RING_DIRECTION_MIN ||
+        sector_count<VISION_RESTORED_PORTAL_RING_SECTORS_REQUIRED)
+        return 0;
+    *score=2.0f*annulus_white+inner_body-inner_white+
+           0.12f*(float)sector_count+
+           0.25f*(outward_white<inward_white ? outward_white : inward_white);
+    return 1;
+}
+
+static int portal_body_white_v_min(uint32_t width,uint32_t height,
+                                     const Shape *shape,uint8_t body_bit,
+                                     uint8_t *white_v_min)
+{
+    uint32_t histogram[256];
+    uint32_t grid_w=width/VISION_SAMPLE_STEP;
+    uint32_t grid_h=height/VISION_SAMPLE_STEP;
+    int x0=(int)floorf(shape->cx-0.50f*shape->major);
+    int x1=(int)ceilf(shape->cx+0.50f*shape->major);
+    int y0=(int)floorf(shape->cy-0.50f*shape->major);
+    int y1=(int)ceilf(shape->cy+0.50f*shape->major);
+    uint32_t count=0U,sum=0U,target;
+    unsigned int median;
+    int y;
+    memset(histogram,0,sizeof(histogram));
+    for (y=y0;y<=y1;++y) {
+        int x;
+        if (y<0 || y>=(int)grid_h) continue;
+        for (x=x0;x<=x1;++x) {
+            float dx,dy,longitudinal,transverse;
+            uint32_t index;
+            if (x<0 || x>=(int)grid_w) continue;
+            dx=(float)x-shape->cx; dy=(float)y-shape->cy;
+            longitudinal=(dx*shape->ux+dy*shape->uy)/shape->major;
+            transverse=(-dx*shape->uy+dy*shape->ux)/shape->minor;
+            /* Exclude both marker ends from the brightness reference. */
+            if (fabsf(longitudinal)>0.24f || fabsf(transverse)>0.42f)
+                continue;
+            index=(uint32_t)y*grid_w+(uint32_t)x;
+            if (pixel_masks[index]&body_bit) {
+                histogram[pixel_v[index]]++; count++;
+            }
+        }
+    }
+    if (!count) return 0;
+    target=count/2U;
+    for (median=0U;median<256U;++median) {
+        sum+=histogram[median];
+        if (sum>target) break;
+    }
+    if (median>=256U) median=255U;
+    median+=(255U-median+4U)/5U;
+    if (median<VISION_WHITE_V_MIN) median=VISION_WHITE_V_MIN;
+    if (median>255U) median=255U;
+    *white_v_min=(uint8_t)median;
+    return 1;
+}
+
+static int verify_portal_radial_ring(VisionType type,uint8_t body_bit,const Shape *shape,
+                                       const uint8_t *frame,uint32_t width,
+                                       uint32_t height,uint32_t stride,
+                                       int *angle_deg,PortalMarkerPose *pose)
+{
+    enum { OFFSET_COUNT=5, TRANSVERSE_COUNT=3, CLUSTER_MAX=8 };
+    static const float offsets[OFFSET_COUNT]={
+        VISION_ENDPOINT_OFFSET,VISION_ENDPOINT_OFFSET_FALLBACK,0.34f,
+        VISION_ENDPOINT_OFFSET_INNER,VISION_ENDPOINT_OFFSET_INNERMOST
+    };
+    static const float transverse[TRANSVERSE_COUNT]={-0.15f,0.0f,0.15f};
+    PortalRadialRingCandidate clusters[CLUSTER_MAX];
+    float center_x=shape->cx*VISION_SAMPLE_STEP+1.0f;
+    float center_y=shape->cy*VISION_SAMPLE_STEP+1.0f;
+    float major=shape->major*VISION_SAMPLE_STEP;
+    float minor=shape->minor*VISION_SAMPLE_STEP;
+    /* Sample the complete painted ring. This fallback uses a bounded radial
+     * radius distinct from the strict endpoint marker radius. */
+    float radius=minor*VISION_RESTORED_PORTAL_RING_RADIUS;
+    uint8_t white_v_min;
+    int cluster_count=0;
+    int oi,ti,side;
+    int best=-1,runner=-1;
+    if (radius<2.0f) radius=2.0f;
+    memset(clusters,0,sizeof(clusters));
+    if (!portal_body_white_v_min(width,height,shape,body_bit,&white_v_min))
+        return 0;
+    for (side=-1;side<=1;side+=2) for (oi=0;oi<OFFSET_COUNT;++oi)
+    for (ti=0;ti<TRANSVERSE_COUNT;++ti) {
+        PortalRadialRingCandidate candidate;
+        float score;
+        int cluster=-1;
+        int ci;
+        /* A's painted ring follows the same ~0.685 marker span prior as B;
+         * avoid the outer .44 probe, which can reinterpret A's lone solid
+         * disk as a displaced ring when the actual ring is absent. B keeps the
+         * wider endpoint search because its fragmented carrier samples use it. */
+        if (type==VISION_PORTAL_A && oi==0) continue;
+        memset(&candidate,0,sizeof(candidate));
+        candidate.cx=center_x+(float)side*shape->ux*major*offsets[oi]-
+                     shape->uy*minor*transverse[ti];
+        candidate.cy=center_y+(float)side*shape->uy*major*offsets[oi]+
+                     shape->ux*minor*transverse[ti];
+        candidate.radius=radius;
+        candidate.side=side;
+        sample_portal_radial_ring(frame,width,height,stride,candidate.cx,candidate.cy,
+                             radius,body_bit,white_v_min,&candidate.sample);
+        if (!portal_radial_ring_score(type,&candidate.sample,&score)) {
+            TRACE("portal_radial type=%s probe side=%d offset=%.2f transverse=%.2f inner_body=%.2f inner_white=%.2f annulus=%.2f sectors=%.2f/%.2f/%.2f/%.2f reject\n",
+                vision_type_name(type),side,offsets[oi],transverse[ti],
+                fraction(candidate.sample.body_inner,candidate.sample.inner_total),
+                fraction(candidate.sample.white_inner,candidate.sample.inner_total),
+                fraction(candidate.sample.white_annulus,candidate.sample.annulus_total),
+                fraction(candidate.sample.white_annulus_sector[0],candidate.sample.annulus_sector_total[0]),
+                fraction(candidate.sample.white_annulus_sector[1],candidate.sample.annulus_sector_total[1]),
+                fraction(candidate.sample.white_annulus_sector[2],candidate.sample.annulus_sector_total[2]),
+                fraction(candidate.sample.white_annulus_sector[3],candidate.sample.annulus_sector_total[3]));
+            continue;
+        }
+        TRACE("portal_radial type=%s probe side=%d offset=%.2f transverse=%.2f score=%.3f accept\n",
+              vision_type_name(type),side,offsets[oi],transverse[ti],score);
+        candidate.score=score; candidate.valid=1;
+        for (ci=0;ci<cluster_count;++ci) {
+            float dx=clusters[ci].cx-candidate.cx;
+            float dy=clusters[ci].cy-candidate.cy;
+            if (clusters[ci].side==side && dx*dx+dy*dy<=radius*radius*1.21f) {
+                cluster=ci; break;
+            }
+        }
+        if (cluster<0) {
+            if (cluster_count>=CLUSTER_MAX) return 0;
+            clusters[cluster_count++]=candidate;
+        } else if (candidate.score>clusters[cluster].score) {
+            clusters[cluster]=candidate;
+        }
+    }
+    for (oi=0;oi<cluster_count;++oi) {
+        if (best<0 || clusters[oi].score>clusters[best].score) {
+            runner=best; best=oi;
+        } else if (runner<0 || clusters[oi].score>clusters[runner].score) {
+            runner=oi;
+        }
+    }
+    /* A second spatially distinct radial ring is identity ambiguity even if
+     * one scores a little better.  Multiple samples of one ring were already
+     * merged above by the radius-scaled cluster gate. */
+    if (best<0 || runner>=0) return 0;
+    {
+        PortalRadialRingCandidate refined=clusters[best];
+        int along,across;
+        float step=minor*0.05f;
+        for (along=-1;along<=1;++along) for (across=-1;across<=1;++across) {
+            PortalRadialRingCandidate candidate;
+            float score;
+            memset(&candidate,0,sizeof(candidate));
+            candidate.cx=clusters[best].cx+shape->ux*step*(float)along-
+                         shape->uy*step*(float)across;
+            candidate.cy=clusters[best].cy+shape->uy*step*(float)along+
+                         shape->ux*step*(float)across;
+            candidate.side=clusters[best].side;
+            candidate.radius=radius;
+            sample_portal_radial_ring(frame,width,height,stride,candidate.cx,
+                                 candidate.cy,radius,body_bit,white_v_min,
+                                 &candidate.sample);
+            if (portal_radial_ring_score(type,&candidate.sample,&score) &&
+                score>refined.score) {
+                candidate.score=score; candidate.valid=1; refined=candidate;
+            }
+        }
+        {
+            float axis_x=shape->ux*(float)refined.side;
+            float axis_y=shape->uy*(float)refined.side;
+            float span=major*(type==VISION_PORTAL_A ?
+                VISION_RESTORED_PORTAL_A_MARKER_SPAN_RATIO :
+                VISION_RESTORED_PORTAL_B_MARKER_SPAN_RATIO);
+            float pose_cx=refined.cx-0.5f*axis_x*span;
+            float pose_cy=refined.cy-0.5f*axis_y*span;
+            float dx=pose_cx-center_x;
+            float dy=pose_cy-center_y;
+            if (fabsf((dx*shape->ux+dy*shape->uy)/major)>
+                    VISION_RESTORED_PORTAL_CENTER_SHIFT_MAX ||
+                fabsf((-dx*shape->uy+dy*shape->ux)/minor)>0.25f)
+                return 0;
+            *angle_deg=(int)lroundf(atan2f(axis_y,axis_x)*180.0f/PI_F);
+            if (pose) {
+                pose->cx=pose_cx; pose->cy=pose_cy;
+                pose->axis_x=axis_x; pose->axis_y=axis_y;
+                pose->fallback=1U; pose->valid=1;
+            }
+        }
+    }
+    TRACE("portal_radial type=%s ring score=%.3f runner=%.3f center=%.1f,%.1f side=%d vmin=%u\n",
+          vision_type_name(type),clusters[best].score,runner>=0 ? clusters[runner].score : -1.0f,
+          clusters[best].cx,clusters[best].cy,clusters[best].side,white_v_min);
+    return 1;
+}
+
+static int verify_portal_marker_layout_with_white_limit(
     VisionType type, uint8_t body_bit, const Shape *shape,
     const uint8_t *frame, uint32_t width, uint32_t height, uint32_t stride,
-    int *angle_deg)
+    int *angle_deg,PortalMarkerPose *pose,uint8_t white_s_max)
 {
     enum { PORTAL_COMPONENT_MAX = 16 };
+    /* Full-resolution diagonal bounding boxes can exceed the320x180 sampled
+     * grid even for an ordinary200x64 body. Never size a pixel ROI by grid
+     * capacity. Keep a separate bounded workspace, shared by the two Portals. */
+    enum { PORTAL_ROI_MAX_PIXELS = 512*512 };
+    static uint8_t portal_roi_mask[PORTAL_ROI_MAX_PIXELS];
+    static uint8_t portal_roi_bits[PORTAL_ROI_MAX_PIXELS];
+    static uint8_t portal_roi_value[PORTAL_ROI_MAX_PIXELS];
+    static uint32_t portal_roi_queue[PORTAL_ROI_MAX_PIXELS];
+    uint8_t *component_mask=real_scene_profile==VISION_PROFILE_RESTORED ? portal_roi_mask : morphology_scratch;
+    uint32_t *component_queue=real_scene_profile==VISION_PROFILE_RESTORED ? portal_roi_queue : v_integral;
     static const int neighbor_x[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
     static const int neighbor_y[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
     PortalMarkerComponent components[PORTAL_COMPONENT_MAX];
@@ -911,6 +1340,7 @@ static int verify_portal_marker_layout(
     uint32_t roi_width;
     uint32_t roi_height;
     uint32_t roi_pixels;
+    uint32_t roi_x,roi_y;
     uint32_t body_pixels = 0U;
     uint32_t body_median_target;
     uint32_t body_median_sum = 0U;
@@ -935,13 +1365,14 @@ static int verify_portal_marker_layout(
     roi_width = (uint32_t)(x1-x0+1);
     roi_height = (uint32_t)(y1-y0+1);
     roi_pixels = roi_width*roi_height;
-    if (roi_pixels > GRID_MAX_PIXELS) return 0;
+    if (roi_pixels > (uint32_t)(real_scene_profile==VISION_PROFILE_RESTORED ? PORTAL_ROI_MAX_PIXELS : GRID_MAX_PIXELS)) return 0;
 
-    for (seed = 0U; seed < roi_pixels; ++seed) {
-        uint32_t local_x = seed%roi_width;
-        uint32_t local_y = seed/roi_width;
-        int x = x0+(int)local_x;
-        int y = y0+(int)local_y;
+    /* Scan by rows: seed/roi_width and seed%roi_width previously invoked
+     * software division for every pixel of both ROI passes on Cortex-A9. */
+    for (roi_y=0U,seed=0U; roi_y<roi_height; ++roi_y)
+    for (roi_x=0U; roi_x<roi_width; ++roi_x,++seed) {
+        int x = x0+(int)roi_x;
+        int y = y0+(int)roi_y;
         float dx = (float)x-shape_center_x;
         float dy = (float)y-shape_center_y;
         float longitudinal = (dx*shape->ux+dy*shape->uy)/major;
@@ -955,7 +1386,11 @@ static int verify_portal_marker_layout(
             continue;
         pixel = frame+(uint32_t)y*stride+(uint32_t)x*3U;
         vision_bgr_to_hsv_pixel(pixel[0], pixel[1], pixel[2], &h, &s, &v);
-        bits = vision_classify_hsv_pixel(h, s, v);
+        bits = portal_marker_bits(h, s, v,white_s_max);
+        if (real_scene_profile==VISION_PROFILE_RESTORED) {
+            portal_roi_bits[seed]=bits;
+            portal_roi_value[seed]=v;
+        }
         if (bits & body_bit) {
             body_v_histogram[v]++;
             body_pixels++;
@@ -972,12 +1407,11 @@ static int verify_portal_marker_layout(
     if (layout.white_v_min < VISION_WHITE_V_MIN)
         layout.white_v_min = VISION_WHITE_V_MIN;
 
-    memset(morphology_scratch, 0, roi_pixels);
-    for (seed = 0U; seed < roi_pixels; ++seed) {
-        uint32_t local_x = seed%roi_width;
-        uint32_t local_y = seed/roi_width;
-        int x = x0+(int)local_x;
-        int y = y0+(int)local_y;
+    memset(component_mask, 0, roi_pixels);
+    for (roi_y=0U,seed=0U; roi_y<roi_height; ++roi_y)
+    for (roi_x=0U; roi_x<roi_width; ++roi_x,++seed) {
+        int x = x0+(int)roi_x;
+        int y = y0+(int)roi_y;
         float dx = (float)x-shape_center_x;
         float dy = (float)y-shape_center_y;
         float longitudinal = (dx*shape->ux+dy*shape->uy)/major;
@@ -986,13 +1420,18 @@ static int verify_portal_marker_layout(
         uint8_t h;
         uint8_t s;
         uint8_t v;
+        uint8_t bits;
         if (fabsf(longitudinal) > 0.70f || fabsf(transverse) > 0.78f)
             continue;
-        pixel = frame+(uint32_t)y*stride+(uint32_t)x*3U;
-        vision_bgr_to_hsv_pixel(pixel[0], pixel[1], pixel[2], &h, &s, &v);
-        if (v >= layout.white_v_min &&
-            (vision_classify_hsv_pixel(h, s, v) & BIT_WHITE))
-            morphology_scratch[seed] = 1U;
+        if (real_scene_profile==VISION_PROFILE_RESTORED) {
+            bits=portal_roi_bits[seed]; v=portal_roi_value[seed];
+        } else {
+            pixel = frame+(uint32_t)y*stride+(uint32_t)x*3U;
+            vision_bgr_to_hsv_pixel(pixel[0], pixel[1], pixel[2], &h, &s, &v);
+            bits=portal_marker_bits(h,s,v,white_s_max);
+        }
+        if (v >= layout.white_v_min && (bits & BIT_WHITE))
+            component_mask[seed] = 1U;
     }
 
     for (seed = 0U; seed < roi_pixels; ++seed) {
@@ -1009,11 +1448,11 @@ static int verify_portal_marker_layout(
         uint64_t sum_yy = 0U;
         uint64_t sum_xy = 0U;
         PortalMarkerComponent component;
-        if (morphology_scratch[seed] != 1U) continue;
-        morphology_scratch[seed] = 2U;
-        v_integral[tail++] = seed;
+        if (component_mask[seed] != 1U) continue;
+        component_mask[seed] = 2U;
+        component_queue[tail++] = seed;
         while (head < tail) {
-            uint32_t current = v_integral[head++];
+            uint32_t current = component_queue[head++];
             uint32_t local_x = current%roi_width;
             uint32_t local_y = current/roi_width;
             unsigned int neighbor;
@@ -1035,9 +1474,9 @@ static int verify_portal_marker_layout(
                     yy >= (int)roi_height)
                     continue;
                 next = (uint32_t)yy*roi_width+(uint32_t)xx;
-                if (morphology_scratch[next] != 1U) continue;
-                morphology_scratch[next] = 2U;
-                v_integral[tail++] = next;
+                if (component_mask[next] != 1U) continue;
+                component_mask[next] = 2U;
+                component_queue[tail++] = next;
             }
         }
         if (count < VISION_PORTAL_MARKER_COMPONENT_MIN_PIXELS ||
@@ -1113,7 +1552,7 @@ static int verify_portal_marker_layout(
                     pixel = frame+(uint32_t)y*stride+(uint32_t)x*3U;
                     vision_bgr_to_hsv_pixel(pixel[0], pixel[1], pixel[2],
                                             &h, &s, &v);
-                    bits = vision_classify_hsv_pixel(h, s, v);
+                    bits = portal_marker_bits(h, s, v,white_s_max);
                     center_total++;
                     if (v >= layout.white_v_min && (bits & BIT_WHITE))
                         center_white++;
@@ -1127,6 +1566,67 @@ static int verify_portal_marker_layout(
         components[component_count++] = component;
     }
 
+    if (real_scene_profile == VISION_PROFILE_RESTORED) {
+        /* The two endpoint marks establish identity, center and signed axis.
+         * Keep carrier shape, solid/ring identity, finite span, orientation and
+         * ambiguity checks while allowing bounded coarse-color center bias. */
+        int si;
+        for (si = 0; si < component_count; ++si) {
+            int ri;
+            const PortalMarkerComponent *s = &components[si];
+            TRACE("restored_portal %d component%d count=%u bbox=%u fill=%.3f center=%.1f,%.1f long=%.3f trans=%.3f major=%.2f aspect=%.2f white=%.2f body=%.2f solid=%d ring=%d\n",
+                (int)type,si,s->count,s->bbox_area,s->fill,s->cx,s->cy,s->longitudinal,s->transverse,
+                s->major,s->aspect,s->center_white,s->center_body,portal_solid_component_ok(s),portal_ring_component_ok(s));
+            if (!portal_solid_component_ok(s)) continue;
+            for (ri = 0; ri < component_count; ++ri) {
+                const PortalMarkerComponent *r = &components[ri];
+                float dx, dy, distance, alignment, score;
+                if (si == ri || !portal_ring_component_ok(r) ||
+                    s->longitudinal*r->longitudinal >= 0.0f ||
+                    fabsf(r->longitudinal-s->longitudinal) < 0.48f ||
+                    fabsf(r->longitudinal-s->longitudinal) >
+                        2.0f*VISION_PORTAL_MARKER_COMPONENT_LONGITUDINAL_MAX ||
+                    /* Validate the pair's center and its recovered axis,
+                     * rather than forcing both marks onto a biased coarse
+                     * PCA axis. The independent alignment check below still
+                     * rejects a pair inconsistent with the colored carrier. */
+                    fabsf(0.5f*(r->transverse+s->transverse)) > 0.25f ||
+                    fabsf(s->transverse) > VISION_PORTAL_MARKER_COMPONENT_TRANSVERSE_MAX ||
+                    fabsf(r->transverse) > VISION_PORTAL_MARKER_COMPONENT_TRANSVERSE_MAX ||
+                    /* A dim/desaturated end biases the colored centroid.
+                     * Check the jointly supported center against that body,
+                     * then the original endpoint span about their midpoint. */
+                    fabsf(0.5f*(s->longitudinal+r->longitudinal)) >
+                        VISION_RESTORED_PORTAL_CENTER_SHIFT_MAX ||
+                    (float)r->bbox_area < (float)s->bbox_area*1.30f ||
+                    r->major < s->major*1.15f) continue;
+                dx = r->cx-s->cx; dy = r->cy-s->cy;
+                distance = hypotf(dx, dy);
+                if (distance <= 0.0f) continue;
+                alignment = fabsf((dx*shape->ux+dy*shape->uy)/distance);
+                if (alignment < 0.92f) continue;
+                score = s->center_white+s->fill+1.0f-r->center_white+
+                        r->center_body+alignment-fabsf(s->transverse)-fabsf(r->transverse);
+                if (score > best_score) {
+                    runner_up_score = best_score; best_score = score;
+                    best_solid_index = si; best_ring_index = ri;
+                } else if (score > runner_up_score) runner_up_score = score;
+            }
+        }
+        if (best_solid_index < 0 || best_ring_index < 0 ||
+            (runner_up_score > -999.0f && best_score-runner_up_score < 0.15f)) return 0;
+        *angle_deg = (int)lroundf(atan2f(components[best_ring_index].cy-components[best_solid_index].cy,
+                                       components[best_ring_index].cx-components[best_solid_index].cx)*180.0f/PI_F);
+        if (pose) {
+            float dx=components[best_ring_index].cx-components[best_solid_index].cx;
+            float dy=components[best_ring_index].cy-components[best_solid_index].cy;
+            float span=hypotf(dx,dy);
+            pose->cx=0.5f*(components[best_ring_index].cx+components[best_solid_index].cx);
+            pose->cy=0.5f*(components[best_ring_index].cy+components[best_solid_index].cy);
+            pose->axis_x=dx/span; pose->axis_y=dy/span; pose->valid=1;
+        }
+        return 1;
+    }
     for (line_index = 0; line_index < component_count; ++line_index) {
         int solid_index;
         if (!portal_line_component_ok(&components[line_index])) continue;
@@ -1263,7 +1763,7 @@ static int is_black_disk(const MarkerSample *sample)
 static int verify_markers(VisionType type, uint8_t body_bit, const Shape *shape,
                           const uint8_t *frame, uint32_t width,
                           uint32_t height, uint32_t stride,
-                          int allow_refined_portal, int *angle_deg)
+                          int allow_refined_portal, int *angle_deg,PortalMarkerPose *pose)
 {
     enum {
         END_OFFSET_COUNT = 4,
@@ -1282,9 +1782,19 @@ static int verify_markers(VisionType type, uint8_t body_bit, const Shape *shape,
     uint8_t mirror_disk[END_OFFSET_COUNT][END_TRANSVERSE_COUNT][END_SIDE_COUNT];
     unsigned int offset_index;
     (void)allow_refined_portal;
-    if (type == VISION_PORTAL_A || type == VISION_PORTAL_B)
-        return verify_portal_marker_layout(type, body_bit, shape, frame,
-                                           width, height, stride, angle_deg);
+    if (type == VISION_PORTAL_A || type == VISION_PORTAL_B) {
+        /* Prefer complete warm-cast rings. If a pale bright carrier joins
+         * that mask, retry the original strict local mask; both paths retain
+         * every solid/ring, finite-layout and ambiguity requirement. */
+        if (real_scene_profile == VISION_PROFILE_RESTORED &&
+            verify_portal_marker_layout_with_white_limit(type,body_bit,shape,frame,
+                width,height,stride,angle_deg,pose,VISION_RESTORED_PORTAL_WHITE_S_MAX)) return 1;
+        if (verify_portal_marker_layout_with_white_limit(type,body_bit,shape,frame,
+                width,height,stride,angle_deg,pose,VISION_RESTORED_WHITE_S_MAX)) return 1;
+        return real_scene_profile==VISION_PROFILE_RESTORED ?
+            verify_portal_radial_ring(type,body_bit,shape,frame,width,height,stride,
+                                        angle_deg,pose) : 0;
+    }
     if (type == VISION_SOURCE || type == VISION_WALL) return 1;
     if (type == VISION_TARGET) {
         float radius = shape->minor * VISION_MARKER_RADIUS;
@@ -2143,8 +2653,8 @@ static void refine_source_roi(const uint8_t *frame, uint32_t stride,
     uint32_t roi_w = roi->x1-roi->x0;
     uint32_t roi_h = roi->y1-roi->y0;
     uint32_t pixels = roi_w*roi_h;
-    Component best_color;
-    Shape best_color_shape;
+    Component best_color = {0};
+    Shape best_color_shape = {0};
     uint32_t best_color_seed = 0U;
     uint32_t best_support = 0U;
     float companion_axis_x = 0.0f;
@@ -2152,8 +2662,8 @@ static void refine_source_roi(const uint8_t *frame, uint32_t stride,
     int companion_axis_valid;
     int have_color = 0;
     uint32_t seed;
-    SourceRefinedPair best_pair;
-    SourceRefinedPair best_valid_pair;
+    SourceRefinedPair best_pair = {0};
+    SourceRefinedPair best_valid_pair = {0};
     int have_pair = 0;
     int have_valid_pair = 0;
     memset(result, 0, sizeof(*result));
@@ -2849,13 +3359,14 @@ static int boxes_overlap_wall(const VisionDetection *detections, int count,
 
 static void fill_detection(VisionDetection *detection, VisionType type,
                            const Component *component, const Shape *shape,
-                           uint32_t width, uint32_t height, int angle_deg)
+                           uint32_t width, uint32_t height, int angle_deg,
+                           const PortalMarkerPose *pose)
 {
     uint32_t x1 = (component->max_x+1U) * VISION_SAMPLE_STEP;
     uint32_t y1 = (component->max_y+1U) * VISION_SAMPLE_STEP;
     float radians = (float)angle_deg*PI_F/180.0f;
-    float axis_x = cosf(radians);
-    float axis_y = sinf(radians);
+    float axis_x = pose && pose->valid ? pose->axis_x : cosf(radians);
+    float axis_y = pose && pose->valid ? pose->axis_y : sinf(radians);
     float normal_x = -axis_y;
     float normal_y = axis_x;
     float min_longitudinal = 0.0f;
@@ -2889,6 +3400,12 @@ static void fill_detection(VisionDetection *detection, VisionType type,
     detection->geometry_center_y =
         axis_y*0.5f*(min_longitudinal+max_longitudinal) +
         normal_y*0.5f*(min_transverse+max_transverse);
+    if (pose && pose->valid) {
+        detection->geometry_center_x=pose->cx;
+        detection->geometry_center_y=pose->cy;
+        detection->center_x=(int)lroundf(pose->cx);
+        detection->center_y=(int)lroundf(pose->cy);
+    }
     detection->bbox_x = (int)(component->min_x * VISION_SAMPLE_STEP);
     detection->bbox_y = (int)(component->min_y * VISION_SAMPLE_STEP);
     if (x1 > width) x1 = width;
@@ -2925,7 +3442,8 @@ static int detect_marker_walls(VisionDetection *output, int output_capacity,
         if (visited[seed] || !wall_marker_mask[seed]) continue;
         collect_wall_marker_component(seed, grid_w, grid_h, &component);
         if (component.count < VISION_WALL_MARKER_MIN_SAMPLES ||
-            component.count > VISION_WALL_MARKER_MAX_SAMPLES ||
+            component.count > (real_scene_profile == VISION_PROFILE_RESTORED ?
+                VISION_RESTORED_WALL_MARKER_MAX_SAMPLES : VISION_WALL_MARKER_MAX_SAMPLES) ||
             !describe_component(&component, &shape) ||
             shape.aspect < VISION_WALL_MARKER_ASPECT_MIN ||
             shape.aspect > VISION_WALL_MARKER_ASPECT_MAX ||
@@ -2978,6 +3496,7 @@ static int detect_marker_walls(VisionDetection *output, int output_capacity,
             int bbox_y1;
             int angle_deg;
             int y;
+            detection_diagnostics.wall_marker_pairs_tested++;
             if (fmaxf(first->major, second->major) /
                     fminf(first->major, second->major) >
                         VISION_WALL_MARKER_MAJOR_RATIO_MAX ||
@@ -3092,6 +3611,15 @@ static int detect_marker_walls(VisionDetection *output, int output_capacity,
             result_count++;
         }
     }
+    detection_diagnostics.wall_marker_components = (uint32_t)marker_count;
+    detection_diagnostics.wall_marker_accepted = (uint32_t)result_count;
+    detection_diagnostics.geometry_pass[VISION_WALL] = (uint32_t)result_count;
+    detection_diagnostics.marker_pass[VISION_WALL] = (uint32_t)result_count;
+    if (real_scene_profile==VISION_PROFILE_RESTORED) {
+        /* A WALL candidate is a bar pair, not a forbidden dark-body fallback. */
+        detection_diagnostics.component_candidates[VISION_WALL]=detection_diagnostics.wall_marker_pairs_tested;
+        detection_diagnostics.rejected_geometry[VISION_WALL]=detection_diagnostics.wall_marker_pairs_tested-(uint32_t)result_count;
+    }
     return result_count;
 }
 
@@ -3151,9 +3679,30 @@ static int detection_is_in_playfield(const VisionDetection *detection,
 {
     if (width != VISION_FIXED_CAMERA_WIDTH || height != VISION_FIXED_CAMERA_HEIGHT)
         return 1;
+#ifdef GAME_BEAM_STANDALONE
+    /* The standalone beam uses the entire 1280x720 camera image.  The old
+     * six-class camera UI reserved its bottom strip and rejected centres at
+     * y>=590; that silently discarded a valid object crossing the fixed beam
+     * across the full camera frame.  Keep the old UI gate for its other build, but require the
+     * standalone object's published box to intersect the frame. */
+    return detection->center_x >= 0 &&
+           detection->center_x < (int)width &&
+           detection->center_y >= 0 &&
+           detection->center_y < (int)height &&
+           detection->bbox_x < (int)width &&
+           detection->bbox_y < (int)height &&
+           detection->bbox_x + detection->bbox_w > 0 &&
+           detection->bbox_y + detection->bbox_h > 0;
+#else
+    if (real_scene_profile == VISION_PROFILE_RESTORED)
+        return detection->center_x >= 0 && detection->center_x < (int)width &&
+               detection->center_y >= 0 && detection->center_y < (int)height &&
+               detection->bbox_x < (int)width && detection->bbox_y < (int)height &&
+               detection->bbox_x+detection->bbox_w > 0 && detection->bbox_y+detection->bbox_h > 0;
     return detection->center_x >= VISION_PLAYFIELD_X_MIN &&
            detection->center_x <= VISION_PLAYFIELD_X_MAX &&
            detection->center_y < VISION_PLAYFIELD_Y_MAX;
+#endif
 }
 
 static int mirror_is_covered_by_source(const VisionDetection *mirror,
@@ -3198,6 +3747,265 @@ static int filter_fixed_camera_detections(VisionDetection *detections, int count
     return kept;
 }
 
+/* Gray-board profile derived from the 2026-10-27 camera samples. Average each
+ * existing 4x4 cell before classification: isolated sensor noise must not join
+ * the gray background to a dark green disk. Geometry still uses camera px.
+ * Mirror identity is its continuous white strip AND both dark end dots;
+ * beige Portal bodies are never candidates merely because they look yellow. */
+static void create_real_scene_masks(const uint8_t *frame, uint32_t stride,
+                                     uint32_t grid_w, uint32_t grid_h)
+{
+    uint32_t y;
+    for (y = 0; y < grid_h; ++y) {
+        uint32_t x;
+        for (x = 0; x < grid_w; ++x) {
+            unsigned b = 0, g = 0, r = 0;
+            uint32_t yy;
+            uint8_t h, s, v;
+            uint32_t index = y*grid_w+x;
+            for (yy = 0; yy < VISION_SAMPLE_STEP; ++yy) {
+                uint32_t xx;
+                const uint8_t *row = frame+(y*VISION_SAMPLE_STEP+yy)*stride+
+                                    x*VISION_SAMPLE_STEP*3U;
+                for (xx = 0; xx < VISION_SAMPLE_STEP; ++xx) {
+                    b += row[3U*xx]; g += row[3U*xx+1U]; r += row[3U*xx+2U];
+                }
+            }
+            b /= VISION_SAMPLE_STEP*VISION_SAMPLE_STEP;
+            g /= VISION_SAMPLE_STEP*VISION_SAMPLE_STEP;
+            r /= VISION_SAMPLE_STEP*VISION_SAMPLE_STEP;
+            vision_bgr_to_hsv_pixel((uint8_t)b, (uint8_t)g, (uint8_t)r,
+                                     &h, &s, &v);
+            pixel_v[index] = v;
+            pixel_s[index] = s;
+            pixel_masks[index] = 0U;
+            if (v >= 85U && s <= 75U && b+20U >= r)
+                pixel_masks[index] |= BIT_WHITE;
+            /* The same green disk shifts from H40 at image center to H30
+             * at the lower corners under the camera's warm shading. Gray
+             * board remains red-dominant; white tag patches have low S. */
+            if (g >= 35U && g+1U >= r && g >= b+8U && s >= 40U &&
+                h >= 28U && h <= 80U)
+                pixel_masks[index] |= BIT_GREEN;
+            raw_marker_masks[index] = pixel_masks[index] & BIT_WHITE;
+        }
+    }
+    morphology_open_close(pixel_masks, morphology_scratch, grid_w, grid_h);
+    /* Near a camera corner the strip is only 2-3 cells thick. Identity is
+     * checked by its endpoint dots, so retain white evidence before erosion. */
+    for (y = 0; y < grid_w*grid_h; ++y) {
+        pixel_masks[y] = (pixel_masks[y] & (uint8_t)~BIT_WHITE) | raw_marker_masks[y];
+        /* Standalone WALLs are black bodies with bright end bars. Keep a
+         * separate low-value body candidate after morphology: the measured
+         * white-bar path can disappear under bottom-row glare, while a dark
+         * body remains a reliable class cue. Large gray-board regions are
+         * rejected later by the area cap and rectangular geometry gates. */
+        if (pixel_v[y] <= VISION_WALL_V_MAX &&
+            pixel_s[y] <= VISION_WALL_MARKER_S_MAX)
+            pixel_masks[y] |= BIT_WALL;
+    }
+}
+
+static int real_scene_endpoint(float predicted_x, float predicted_y,
+                                float radius, float dark_limit,
+                                uint32_t grid_w, uint32_t grid_h,
+                                float *cx, float *cy)
+{
+    int y;
+    unsigned count = 0;
+    float sx = 0.0f, sy = 0.0f;
+    for (y = (int)floorf(predicted_y-radius); y <= (int)ceilf(predicted_y+radius); ++y) {
+        int x;
+        if (y < 0 || y >= (int)grid_h) continue;
+        for (x = (int)floorf(predicted_x-radius); x <= (int)ceilf(predicted_x+radius); ++x) {
+            float dx = x-predicted_x, dy = y-predicted_y;
+            if (x < 0 || x >= (int)grid_w || dx*dx+dy*dy > radius*radius)
+                continue;
+            if (pixel_v[(uint32_t)y*grid_w+(uint32_t)x] < dark_limit) {
+                ++count; sx += x; sy += y;
+            }
+        }
+    }
+    if (count < 3U || count > radius*radius*2.5f) return 0;
+    *cx = sx/count; *cy = sy/count;
+    return 1;
+}
+
+static void real_scene_geometry(VisionDetection *d, VisionType type,
+                                 float cx, float cy, float ux, float uy,
+                                 float major, float minor,
+                                 uint32_t width, uint32_t height)
+{
+    float ex = 0.5f*(fabsf(ux)*major+fabsf(uy)*minor);
+    float ey = 0.5f*(fabsf(uy)*major+fabsf(ux)*minor);
+    int x0 = (int)floorf(cx-ex), y0 = (int)floorf(cy-ey);
+    int x1 = (int)ceilf(cx+ex), y1 = (int)ceilf(cy+ey);
+    memset(d, 0, sizeof(*d));
+    d->type = type;
+    d->center_x = (int)lroundf(cx); d->center_y = (int)lroundf(cy);
+    d->geometry_center_x = cx; d->geometry_center_y = cy;
+    d->axis_x = ux; d->axis_y = uy;
+    d->major_length = major; d->minor_width = minor;
+    d->geometry_is_effective = 1;
+    d->angle_deg = (int)lroundf(atan2f(uy, ux)*180.0f/PI_F);
+    if (d->angle_deg >= 90) d->angle_deg -= 180;
+    if (d->angle_deg < -90) d->angle_deg += 180;
+    d->bbox_x = x0 < 0 ? 0 : x0; d->bbox_y = y0 < 0 ? 0 : y0;
+    d->bbox_w = (x1 > (int)width ? (int)width : x1)-d->bbox_x;
+    d->bbox_h = (y1 > (int)height ? (int)height : y1)-d->bbox_y;
+    d->confidence_percent = 95;
+    d->sampled_area = (uint32_t)(major*minor);
+}
+
+static int detect_real_scene_bgr888(const uint8_t *frame, uint32_t width,
+                                    uint32_t height, uint32_t stride,
+                                    VisionDetection *output, int capacity,
+                                    int include_target)
+{
+    Shape bars[32];
+    float bar_values[32];
+    int bar_count = 0, count = 0, i;
+    uint32_t gw = width/VISION_SAMPLE_STEP, gh = height/VISION_SAMPLE_STEP;
+    uint32_t seed, pixels = gw*gh;
+    if (!frame || !output || capacity <= 0 || width < VISION_SAMPLE_STEP ||
+        height < VISION_SAMPLE_STEP || width > 1280U || height > 720U ||
+        stride < width*3U) return -1;
+    if (!real_scene_portal_detector) return -3;
+    if (!real_scene_geometry_configured) return -4;
+    create_real_scene_masks(frame, stride, gw, gh);
+    memset(visited, 0, pixels);
+    for (seed = 0; seed < pixels && count < capacity; ++seed) {
+        Component c;
+        Shape s;
+        if (visited[seed] || !(pixel_masks[seed] & BIT_WHITE)) continue;
+        collect_component(seed, BIT_WHITE, gw, gh, &c);
+        if (c.count < 12U || c.count > 1000U || !describe_component(&c, &s) ||
+            s.fill < 0.55f) continue;
+        if (s.aspect >= 4.0f && s.aspect <= 16.0f && s.major >= 12.0f) {
+            float ax, ay, bx, by;
+            float offset = s.major*0.55f;
+            float radius = fmaxf(2.0f, s.minor*0.85f);
+            float dark = fminf(75.0f, (float)c.sum_v/c.count*0.48f);
+            if (real_scene_endpoint(s.cx-s.ux*offset, s.cy-s.uy*offset,
+                                      radius, dark, gw, gh, &ax, &ay) &&
+                real_scene_endpoint(s.cx+s.ux*offset, s.cy+s.uy*offset,
+                                      radius, dark, gw, gh, &bx, &by)) {
+                float dx = bx-ax, dy = by-ay, length = sqrtf(dx*dx+dy*dy);
+                if (length >= s.major*0.85f && length <= s.major*1.4f) {
+                    real_scene_geometry(&output[count], VISION_MIRROR,
+                        (ax+bx)*2.0f+1.5f, (ay+by)*2.0f+1.5f, dx/length, dy/length,
+                        length*4.0f*real_scene_geometry_ratios.mirror_body_to_marker_span,
+                        length*4.0f*real_scene_geometry_ratios.mirror_body_width_to_marker_span,
+                        width, height);
+                    output[count].major_length = length*4.0f*
+                        real_scene_geometry_ratios.mirror_reflective_to_marker_span;
+                    ++count;
+                }
+            }
+        } else if (s.aspect >= 1.7f && s.aspect <= 4.5f &&
+                   s.major >= 8.0f && bar_count < 32) {
+            bars[bar_count] = s;
+            bar_values[bar_count++] = (float)c.sum_v/c.count;
+        }
+    }
+    for (i = 0; i < bar_count && count < capacity; ++i) {
+        int j;
+        for (j = i+1; j < bar_count && count < capacity; ++j) {
+            const Shape *a = &bars[i], *b = &bars[j];
+            float dx = b->cx-a->cx, dy = b->cy-a->cy;
+            float distance = sqrtf(dx*dx+dy*dy);
+            float major = 0.5f*(a->major+b->major);
+            float ux, uy, cx, cy;
+            unsigned n = 0, dark = 0;
+            int along, across;
+            if (distance < major*1.6f || distance > major*3.2f ||
+                fmaxf(a->major,b->major) > fminf(a->major,b->major)*1.6f ||
+                fmaxf(a->minor,b->minor) > fminf(a->minor,b->minor)*1.8f)
+                continue;
+            ux = dx/distance; uy = dy/distance;
+            if (fabsf(a->ux*b->ux+a->uy*b->uy) < 0.90f ||
+                fabsf(a->ux*ux+a->uy*uy) > 0.40f ||
+                fabsf(b->ux*ux+b->uy*uy) > 0.40f) continue;
+            cx = 0.5f*(a->cx+b->cx); cy = 0.5f*(a->cy+b->cy);
+            for (along = -(int)(distance*0.3f); along <= (int)(distance*0.3f); ++along)
+                for (across = -(int)(major*0.3f); across <= (int)(major*0.3f); ++across) {
+                    int x = (int)lroundf(cx+along*ux-across*uy);
+                    int y = (int)lroundf(cy+along*uy+across*ux);
+                    if (x < 0 || y < 0 || x >= (int)gw || y >= (int)gh) continue;
+                    ++n;
+                    if (pixel_v[(uint32_t)y*gw+(uint32_t)x] <
+                        fminf(bar_values[i],bar_values[j])*0.55f) ++dark;
+                }
+            if (n < 20U || dark*100U < n*85U) continue;
+            real_scene_geometry(&output[count++], VISION_WALL,
+                cx*4.0f+1.5f, cy*4.0f+1.5f, ux, uy,
+                distance*4.0f*real_scene_geometry_ratios.wall_body_to_marker_span,
+                major*4.0f*real_scene_geometry_ratios.wall_body_width_to_bar_span,
+                width, height);
+        }
+    }
+    /* Fallback for the measured black WALL body when one or both white end
+     * bars are washed out. This is still a WALL-only shape/area candidate;
+     * it does not turn arbitrary dark pixels into a valid object. */
+    memset(visited, 0, pixels);
+    for (seed = 0; seed < pixels && count < capacity; ++seed) {
+        Component c;
+        Shape s;
+        uint32_t area;
+        if (visited[seed] || !(pixel_masks[seed] & BIT_WALL)) continue;
+        collect_component(seed, BIT_WALL, gw, gh, &c);
+        area = c.count*VISION_SAMPLE_STEP*VISION_SAMPLE_STEP;
+        if (c.count < VISION_MIN_COMPONENT_SAMPLES ||
+            area < VISION_WALL_MIN_AREA_PIXELS ||
+            area > width*height*VISION_WALL_MAX_FRAME_FRACTION_PERCENT/100U ||
+            !describe_component(&c, &s) ||
+            s.aspect < VISION_WALL_ASPECT_MIN ||
+            s.aspect > VISION_WALL_ASPECT_MAX ||
+            s.fill < VISION_WALL_FILL_MIN)
+            continue;
+        real_scene_geometry(&output[count], VISION_WALL,
+            s.cx*VISION_SAMPLE_STEP+1.5f, s.cy*VISION_SAMPLE_STEP+1.5f,
+            s.ux, s.uy, s.major*VISION_SAMPLE_STEP,
+            s.minor*VISION_SAMPLE_STEP, width, height);
+        output[count].confidence_percent = 90;
+        output[count].sampled_area = area;
+        ++count;
+    }
+    if (include_target) {
+        memset(visited, 0, pixels);
+        for (seed = 0; seed < pixels && count < capacity; ++seed) {
+            Component c;
+            Shape s;
+            float bw, bh;
+            if (visited[seed] || !(pixel_masks[seed] & BIT_GREEN)) continue;
+            collect_component(seed, BIT_GREEN, gw, gh, &c);
+            if (c.count < 25U || c.count > pixels/12U || !describe_component(&c,&s))
+                continue;
+            bw = (float)(c.max_x-c.min_x+1U); bh = (float)(c.max_y-c.min_y+1U);
+            if (fmaxf(bw,bh) > fminf(bw,bh)*1.35f || s.aspect > 1.4f ||
+                s.fill < 0.65f || (float)c.count < bw*bh*0.65f ||
+                s.circularity < 0.40f) continue;
+            fill_detection(&output[count], VISION_TARGET, &c, &s, width, height, 0,NULL);
+            /* TARGET remains a circle. Its camera bbox may be slightly
+             * non-square under perspective or sampling, so publish one
+             * conservative diameter for rendering and ray intersection. */
+            output[count].major_length = output[count].minor_width =
+                fminf(output[count].major_length, output[count].minor_width);
+            output[count].geometry_is_effective = 1;
+            ++count;
+        }
+    }
+    if (count < capacity) {
+        int portal_count = real_scene_portal_detector(frame, width, height,
+                                                       stride, output+count,
+                                                       capacity-count);
+        if (portal_count < 0 || portal_count > capacity-count) return -3;
+        count += portal_count;
+    }
+    for (i = 0; i < count; ++i) output[i].geometry_is_effective = 1;
+    return sort_and_suppress(output, count);
+}
+
 int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,
                                  uint32_t height, uint32_t stride,
                                  VisionDetection *output,
@@ -3214,6 +4022,10 @@ int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,
     uint32_t grid_h;
     int result_count = 0;
     int body_index;
+    memset(&detection_diagnostics, 0, sizeof(detection_diagnostics));
+    if (real_scene_profile == VISION_PROFILE_TAGS)
+        return detect_real_scene_bgr888(frame,width,height,stride,output,
+                                         output_capacity,0);
     if (!frame || !output || output_capacity <= 0 || width < VISION_SAMPLE_STEP ||
         height < VISION_SAMPLE_STEP || stride < width*3U) return -1;
     grid_w = width / VISION_SAMPLE_STEP;
@@ -3227,13 +4039,15 @@ int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,
     create_masks(frame, stride, grid_w, grid_h);
     result_count = detect_marker_walls(output, output_capacity, width, height,
                                        grid_w, grid_h);
-    if (result_count < output_capacity)
+    if (real_scene_profile != VISION_PROFILE_RESTORED && result_count < output_capacity)
         result_count += detect_marker_source(
             frame, stride, output+result_count,
             output_capacity-result_count, width, height, grid_w, grid_h);
     for (body_index = 0; body_index < 4 && result_count < output_capacity; ++body_index) {
         uint8_t bit = body_bits[body_index];
         VisionType type = body_types[body_index];
+        if (real_scene_profile == VISION_PROFILE_RESTORED && type == VISION_WALL)
+            continue; /* Retain the white-bar identity, no dark-body fallback. */
         uint32_t pixels = grid_w * grid_h;
         uint32_t seed;
         memset(visited, 0, pixels);
@@ -3244,13 +4058,15 @@ int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,
             int marker_pass;
             int angle_deg;
             int allow_refined_portal;
+            PortalMarkerPose portal_pose={0};
             if (visited[seed] || !(pixel_masks[seed] & bit)) continue;
             collect_component(seed, bit, grid_w, grid_h, &component);
             if (component.count < VISION_MIN_COMPONENT_SAMPLES ||
                 component.count * VISION_SAMPLE_STEP * VISION_SAMPLE_STEP >
                     width * height * VISION_MAX_FRAME_FRACTION_PERCENT / 100U ||
                 !describe_component(&component, &shape)) continue;
-            if ((type == VISION_PORTAL_A || type == VISION_PORTAL_B) &&
+            if ((type == VISION_PORTAL_A || type == VISION_PORTAL_B ||
+                 (real_scene_profile == VISION_PROFILE_RESTORED && type == VISION_MIRROR)) &&
                 component.count * VISION_SAMPLE_STEP * VISION_SAMPLE_STEP <
                     VISION_PORTAL_MIN_AREA_PIXELS)
                 continue;
@@ -3260,6 +4076,7 @@ int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,
                  component.count * VISION_SAMPLE_STEP * VISION_SAMPLE_STEP >
                      width * height * VISION_WALL_MAX_FRAME_FRACTION_PERCENT / 100U))
                 continue;
+            detection_diagnostics.component_candidates[type]++;
             angle_deg = shape.angle_deg;
             geometry_pass = geometry_ok(type, &shape);
             allow_refined_portal = component.min_x > 0U &&
@@ -3268,7 +4085,11 @@ int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,
                                    component.max_y + 1U < grid_h;
             marker_pass = geometry_pass ?
                 verify_markers(type, bit, &shape, frame, width, height, stride,
-                               allow_refined_portal, &angle_deg) : 0;
+                               allow_refined_portal, &angle_deg,&portal_pose) : 0;
+            if (geometry_pass) detection_diagnostics.geometry_pass[type]++;
+            else detection_diagnostics.rejected_geometry[type]++;
+            if (geometry_pass && marker_pass) detection_diagnostics.marker_pass[type]++;
+            else if (geometry_pass) detection_diagnostics.rejected_marker[type]++;
             TRACE("candidate %s n=%u aspect=%.2f fill=%.2f circ=%.2f geometry=%d marker=%d\n",
                   vision_type_name(type), component.count, shape.aspect,
                   shape.fill,
@@ -3307,26 +4128,38 @@ int vision_detect_objects_bgr888(const uint8_t *frame, uint32_t width,
                 result_count = write_index;
             }
             fill_detection(&output[result_count], type, &component, &shape,
-                           width, height, angle_deg);
+                           width, height, angle_deg,&portal_pose);
             if (type == VISION_PORTAL_A || type == VISION_PORTAL_B)
-                output[result_count].confidence_percent = 100;
+                output[result_count].confidence_percent = portal_pose.fallback ? 96 : 100;
             result_count++;
         }
     }
-    return filter_fixed_camera_detections(output, result_count, width, height);
+    result_count = filter_fixed_camera_detections(output, result_count, width, height);
+    {
+        int i;
+        for (i = 0; i < result_count; ++i)
+            detection_diagnostics.accepted[output[i].type]++;
+    }
+    return result_count;
 }
 
 int vision_detect_bgr888(const uint8_t *frame, uint32_t width, uint32_t height,
                          uint32_t stride, VisionDetection *output,
                          int output_capacity)
 {
+    memset(&detection_diagnostics, 0, sizeof(detection_diagnostics));
+    if (real_scene_profile == VISION_PROFILE_TAGS)
+        return detect_real_scene_bgr888(frame,width,height,stride,output,
+                                         output_capacity,1);
     int count = vision_detect_objects_bgr888(frame, width, height, stride,
                                              output, output_capacity);
     int target_count;
     if (count < 0 || count >= output_capacity) return count;
-    target_count = green_target_detect_bgr888(frame, width, height, stride,
-                                              output + count,
-                                              output_capacity - count);
+    target_count = real_scene_profile == VISION_PROFILE_RESTORED ?
+        green_target_detect_mask(pixel_masks, BIT_GREEN, width, height,
+                                  output+count, output_capacity-count) :
+        green_target_detect_bgr888(frame, width, height, stride,
+                                    output+count, output_capacity-count);
     if (target_count < 0) return target_count;
 #ifdef VISION_PORTAL_DIAGNOSTICS
     if (portal_diagnostic_type >= 0) {
@@ -3347,7 +4180,28 @@ int vision_detect_bgr888(const uint8_t *frame, uint32_t width, uint32_t height,
     }
 #endif
     count = sort_and_suppress(output, count + target_count);
-    return filter_fixed_camera_detections(output, count, width, height);
+    count = filter_fixed_camera_detections(output, count, width, height);
+    memset(detection_diagnostics.accepted, 0,
+           sizeof(detection_diagnostics.accepted));
+    {
+        int accepted_index;
+        for (accepted_index = 0; accepted_index < count; ++accepted_index)
+            detection_diagnostics.accepted[output[accepted_index].type]++;
+    }
+    if (real_scene_profile == VISION_PROFILE_RESTORED) {
+        int i;
+        for (i = 0; i < count; ++i) {
+            VisionDetection *d = &output[i];
+            if (d->type == VISION_MIRROR)
+                d->major_length *= VISION_MIRROR_SURFACE_LENGTH_RATIO;
+            else if (d->type == VISION_TARGET)
+                d->major_length = d->minor_width = (float)(d->bbox_w < d->bbox_h ? d->bbox_w : d->bbox_h);
+            /* Convert the legacy carrier geometry exactly once. Downstream
+             * filtering, drawing and tracing now use these same boundaries. */
+            d->geometry_is_effective = 1;
+        }
+    }
+    return count;
 }
 
 const char *vision_type_name(VisionType type)

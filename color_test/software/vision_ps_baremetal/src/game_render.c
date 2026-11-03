@@ -240,7 +240,14 @@ GameRenderStatus game_render_cached_source(const GameLoopOutput *p,const GameCon
     game_render_text(c,860,20,"未标定预览",2,WARNING);
     for (i=0;i<layout->level_count;++i) {
         int hover=p->menu.hover.kind==GAME_MENU_SELECT && p->menu.hover.level_id==layout->levels[i].level_id;
-        button(c,layout->levels[i].rect,levels[i],1,s->level_id==layout->levels[i].level_id,hover,p->menu.left_down);
+        char generated_label[24];
+        const char *label;
+        if (i<3) label=levels[i];
+        else {
+            (void)snprintf(generated_label,sizeof generated_label,"LEVEL %02u",layout->levels[i].level_id);
+            label=generated_label;
+        }
+        button(c,layout->levels[i].rect,label,1,s->level_id==layout->levels[i].level_id,hover,p->menu.left_down);
     }
     button(c,layout->start,"开始",p->menu.start_enabled,0,p->menu.hover.kind==GAME_MENU_START,p->menu.left_down);
     game_render_text(c,820,681,p->menu.start_enabled?"可用":"不可用",2,p->menu.start_enabled?ACCENT:MUTED);
